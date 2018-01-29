@@ -5,7 +5,6 @@ import sys
 import numpy
 import scipy.signal as sig
 import scipy.io.wavfile as wav
-import argparse
 
 
 import utils.spectrum_proc_utils as utils_sp
