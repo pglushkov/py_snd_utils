@@ -29,7 +29,7 @@ def run_main():
     sampleperiod = 1.0 / samplerate
     signal = signal.reshape( (-1, 1) )
 
-    fft_size = 256
+    fft_size = 64
     nfilters = 15
 
     signal = utils_sig.pad_to_multiple_of(signal, fft_size, 0.0)
@@ -41,20 +41,94 @@ def run_main():
     (fbank_envs_py, _) = psf.fbank(signal ,samplerate=samplerate ,winlen=timestep ,winstep=timestep,
                                    nfilt=nfilters ,nfft=fft_size ,lowfreq=0 ,highfreq=None ,preemph=0)
 
-    # simple_plot(signal, numpy.arange(signal.shape[0]) * sampleperiod)
-    # simple_plot(fbank_envs[30,:])
-    # simple_plot(fbank_envs_py[30,:])
+    SIG_DUR = sampleperiod * signal.shape[0]
+    SIG_X = numpy.arange(0, SIG_DUR, sampleperiod)
 
-    print(fbank_envs.shape)
-    print(fbank_envs_py.shape)
+    dfb, D_FB_X = estimate_sc_from_envelopes(fbank_envs, samplerate, fft_size)
 
-    print(fbank_envs.dtype)
-    print(fbank_envs_py.dtype)
+    #utils_plot.simple_plot(signal, SIG_X)
+    #utils_plot.plot_curves( [signal, fbank_envs[:,1]], [SIG_X, FB_X] )
+    #utils_plot.plot_curves([signal, deriv], [SIG_X, D_FB_X])
+    utils_plot.plot_curves([signal, dfb], [SIG_X, D_FB_X])
 
-    fbank_envs.tofile('./tmp/my_fbank.bin')
-    fbank_envs_py.tofile('./tmp/py_fbank.bin')
+def run_main_world_env(fft_size, tstep):
 
+    if len(sys.argv) < 5:
+        raise Exception("Need to specify input wav and sp files to process")
+
+    wavname = sys.argv[1]
+    spname = sys.argv[2]
+    maskname = sys.argv[3]
+    f0name = sys.argv[4]
+
+    if not os.path.exists(wavname):
+        raise Exception("Specified wavfile {0} does not seem to exist!".format(wavname))
+    if not os.path.exists(spname):
+        raise Exception("Specified sp-file {0} does not seem to exist!".format(spname))
+    if not os.path.exists(maskname):
+        raise Exception("Specified mask {0} does not seem to exist!".format(maskname))
+    if not os.path.exists(maskname):
+        raise Exception("Specified mask {0} does not seem to exist!".format(f0name))
+
+    print("Will process file {0}".format(wavname))
+
+    (samplerate, signal) = wav.read(wavname)
+    sampleperiod = 1.0 / samplerate
+    signal = signal.reshape( (-1, 1) ) / (2.0 ** 15.0)
+
+    (_, mask) = wav.read(maskname)
+    mask = mask.reshape( (-1, 1) ) / (2.0 ** 15.0)
+
+    SIG_DUR = sampleperiod * signal.shape[0]
+    SIG_X = numpy.arange(0, SIG_DUR, sampleperiod)
+
+    MASK_DUR = sampleperiod * mask.shape[0]
+    MASK_X = numpy.arange(0, MASK_DUR, sampleperiod)
+
+    f0data = numpy.fromfile(f0name, dtype = 'float64')
+    f0data /= numpy.max(numpy.abs(f0data))
+    F0_DUR = tstep * len(f0data)
+    F0_X = numpy.arange(0, F0_DUR, tstep)
+
+    spvals = numpy.fromfile(spname, dtype = 'float64')
+    fbank_envs = spvals.reshape( (-1, int(fft_size/2 + 1)) )
+
+    dfb, D_FB_X = estimate_sc_from_envelopes(fbank_envs, samplerate, int(tstep * samplerate))
+    dfb /= numpy.max(numpy.abs(dfb))
+
+    #utils_plot.simple_plot(fbank_envs[100,:])
+    #utils_plot.plot_curves([signal, mask, dfb], [SIG_X, MASK_X, D_FB_X])
+    utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
+
+def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
+
+    sampleperiod = 1.0 / samplerate
+    FB_STEP = sampleperiod * tstep
+    FB_DUR = fbank_envs.shape[0] * FB_STEP
+    FB_X = numpy.arange(0, FB_DUR, FB_STEP)
+
+    # 1st deriv
+    dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
+    for k in range(10, fbank_envs.shape[1] - 150):
+        dfb += utils_td.deriv(fbank_envs[:,k].T)
+    dfb /= fbank_envs.shape[1]
+    D_FB_X = numpy.arange(FB_STEP, FB_DUR - FB_STEP, FB_STEP)
+
+
+    # 2nd deriv
+    dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )
+    for k in range(10, fbank_envs.shape[1] - 150):
+        tmp = utils_td.deriv(fbank_envs[:, k].T)
+        dfb += utils_td.deriv(tmp)
+    dfb /= fbank_envs.shape[1]
+    D_FB_X = numpy.arange(FB_STEP*2, FB_DUR - FB_STEP*2, FB_STEP)
+
+    #dfb = numpy.diff(fbank_envs[:,2])
+    #D_FB_X = numpy.arange( 0, FB_DUR - FB_STEP, FB_STEP )
+
+    #return (deriv, D_FB_X)
+    return (dfb, D_FB_X)
 
 if __name__ == '__main__':
-    run_main()
-
+    #run_main()
+    run_main_world_env(1024, 0.005)

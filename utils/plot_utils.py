@@ -12,3 +12,20 @@ def simple_plot(y, x = None):
     plt.plot(x,y)
     f.show()
     input('press ENTER to go on ...')
+
+def plot_curves(y, x = None):
+    assert(y.__class__ is list)
+    if x is not None:
+        assert(x.__class__ is list)
+    assert (len(y) == len(x))
+
+    f = plt.figure()
+    for k in range(len(y)):
+        Y = y[k].squeeze()
+        if x is None:
+            X = numpy.arange(len(Y))
+        else:
+            X = x[k].squeeze()
+        plt.plot(X,Y)
+    f.show()
+    input('press ENTER to go on...')

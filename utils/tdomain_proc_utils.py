@@ -2,6 +2,7 @@
 
 import numpy
 
+import utils.sig_utils as utils_sig
 
 def get_rms(inp):
     rms = numpy.sqrt( numpy.sum(inp ** 2) / len(inp))
@@ -57,4 +58,23 @@ def get_energy_for_chunks(chunks):
         res[k,0] = tmp
     return res
 
+def deriv(inp):
+    assert(utils_sig.is_row(inp) or numpy.ndim(inp) == 1)
+    if (numpy.ndim(inp) == 1):
+        inp = inp.reshape( (1,-1) )
 
+    inp_len = inp.shape[1]
+    res = numpy.zeros( (1, inp_len - 2))
+
+    for k in range(1, inp_len - 1):
+        res[0, k-1] = (inp[0, k + 1] - inp[0, k - 1])/2.0
+
+    return res
+
+def get_deriv_for_chunks(chunks):
+    num_chunks = chunks.shape[0]
+    res = numpy.zeros( (num_chunks, 1) )
+    for k in range(num_chunks):
+        tmp = deriv(chunks[k,:])
+        res[k,0] = tmp
+    return res
