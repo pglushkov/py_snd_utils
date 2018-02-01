@@ -90,8 +90,10 @@ def run_main():
     
     curpath = os.getcwd()
 
-    reaper_name = curpath + '/reaper'
-    reaper_args = ['-i', curpath + '/' + wav_name, '-f', curpath + '/' + f0_name, '-p',  curpath + '/' + pm_name, '-a']
+    reaper_name = curpath + '/bin_utils/reaper'
+    f0_file_name = curpath + '/tmp/' + f0_name
+    pm_file_name = curpath + '/tmp/' + pm_name
+    reaper_args = ['-i', wav_name, '-f', f0_file_name, '-p', pm_file_name, '-a']
 
     reaper_res = run_proc(reaper_name, reaper_args)
     print("Running REAPER returned result : {0}".format(reaper_res))
@@ -111,7 +113,7 @@ def run_main():
     #plt.show()
     #return
     
-    f0_track = read_f0_from_file(f0_name)
+    f0_track = read_f0_from_file(f0_file_name)
 
     #MY_DBG
     #print(len(f0_track[0])) 
@@ -119,7 +121,7 @@ def run_main():
     #plt.plot(f0_track[0], f0_track[1])
     #plt.show()
 
-    pm_track = read_pm_from_file(pm_name)
+    pm_track = read_pm_from_file(pm_file_name)
          
     #MY_DBG
     print(len(pm_track[0]))
@@ -135,7 +137,7 @@ def run_main():
 
     pm_intervs = numpy.diff(pm_track[0], axis = 0)
     fft_size = int(2.0 ** numpy.ceil(numpy.log2(numpy.max(pm_intervs * samplerate))))
-    #print(fft_size)
+    print('used fft_size = {0}'.format(fft_size))
     wnd = sig.get_window('boxcar', fft_size)
   
 
@@ -158,8 +160,8 @@ def run_main():
     #plt.show()
 
 
-    sig_for_sgram.astype('float32').tofile('pmarked.bin')
-    wav_track[0].squeeze().astype('float32').tofile('orig.bin')
+    sig_for_sgram.astype('float64').tofile('tmp/pmarked.bin')
+    wav_track[0].squeeze().astype('float64').tofile('tmp/orig.bin')
 
     freq_grid, time_grid, sgram = sig.spectrogram(wav_track[0].squeeze(), fs=samplerate)
 

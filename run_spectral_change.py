@@ -11,7 +11,8 @@ import utils.spectrum_proc_utils as utils_sp
 import utils.sig_utils as utils_sig
 import utils.tdomain_proc_utils as utils_td
 import utils.plot_utils as utils_plot
-
+import utils.misc_utils as utils_misc
+import utils.reaper_utils as utils_reaper
 
 def run_main():
 
@@ -67,7 +68,7 @@ def run_main_world_env(fft_size, tstep):
         raise Exception("Specified sp-file {0} does not seem to exist!".format(spname))
     if not os.path.exists(maskname):
         raise Exception("Specified mask {0} does not seem to exist!".format(maskname))
-    if not os.path.exists(maskname):
+    if not os.path.exists(f0name):
         raise Exception("Specified mask {0} does not seem to exist!".format(f0name))
 
     print("Will process file {0}".format(wavname))
@@ -100,6 +101,59 @@ def run_main_world_env(fft_size, tstep):
     #utils_plot.plot_curves([signal, mask, dfb], [SIG_X, MASK_X, D_FB_X])
     utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
 
+def run_main_reaper_pm_env(fft_time_step, tstep):
+
+    if len(sys.argv) < 5:
+        raise Exception("Need to specify input wav and sp files to process")
+
+    wavname = sys.argv[1]
+    pmname = sys.argv[2]
+    maskname = sys.argv[3]
+    pmtxtname = sys.argv[4]
+
+    if not os.path.exists(wavname):
+        raise Exception("Specified wavfile {0} does not seem to exist!".format(wavname))
+    if not os.path.exists(pmname):
+        raise Exception("Specified pitch-marks file {0} does not seem to exist!".format(pmname))
+    if not os.path.exists(maskname):
+        raise Exception("Specified mask {0} does not seem to exist!".format(maskname))
+    if not os.path.exists(pmtxtname):
+        raise Exception("Specified pitch-marks ACII file {0} does not seem to exist!".format(pmtxtname))
+
+    print("Will process file {0}".format(wavname))
+
+    (samplerate, signal) = wav.read(wavname)
+    sampleperiod = 1.0 / samplerate
+    signal = signal.reshape( (-1, 1) ) / (2.0 ** 15.0)
+
+    (_, mask) = wav.read(maskname)
+    mask = mask.reshape( (-1, 1) ) / (2.0 ** 15.0)
+
+    fft_size = utils_misc.nextpow2(samplerate * fft_time_step)
+
+    SIG_DUR = sampleperiod * signal.shape[0]
+    SIG_X = numpy.arange(0, SIG_DUR, sampleperiod)
+
+    MASK_DUR = sampleperiod * mask.shape[0]
+    MASK_X = numpy.arange(0, MASK_DUR, sampleperiod)
+
+    pmvals = numpy.fromfile(pmname, dtype = 'float64')
+    pm_chunks = pmvals.reshape( (-1, fft_size) )
+    pm_envs = utils_sp.get_spec_envelopes(pm_chunks)
+
+    dfb, D_FB_X = estimate_sc_from_envelopes(pm_envs, samplerate, fft_size)
+    dfb /= numpy.max(numpy.abs(dfb))
+
+    (pmarks, _) = utils_reaper.read_pm_from_file(pmtxtname)
+    D_FB_X = pmarks[2:-2, 0]
+
+    print(dfb.shape)
+
+
+    utils_plot.plot_curves([ pm_chunks[100,:], pm_chunks[101,:], pm_chunks[102,:] ])
+    utils_plot.plot_curves([signal, mask, dfb], [SIG_X, MASK_X, D_FB_X])
+    #utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
+
 def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
 
     sampleperiod = 1.0 / samplerate
@@ -117,7 +171,7 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
 
     # 2nd deriv
     dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )
-    for k in range(10, fbank_envs.shape[1] - 150):
+    for k in range(fbank_envs.shape[1]):
         tmp = utils_td.deriv(fbank_envs[:, k].T)
         dfb += utils_td.deriv(tmp)
     dfb /= fbank_envs.shape[1]
@@ -130,5 +184,10 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
     return (dfb, D_FB_X)
 
 if __name__ == '__main__':
+
     #run_main()
-    run_main_world_env(1024, 0.005)
+
+    #run_main_world_env(1024, 0.005)
+
+    fft_time_step = 0.01
+    run_main_reaper_pm_env(fft_time_step, 0.005)
