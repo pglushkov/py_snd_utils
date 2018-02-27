@@ -13,11 +13,14 @@ def simple_plot(y, x = None):
     f.show()
     input('press ENTER to go on ...')
 
-def plot_curves(y, x = None):
+def plot_curves(y, x = None, labels = None):
     assert(y.__class__ is list)
     if x is not None:
         assert(x.__class__ is list)
         assert (len(y) == len(x))
+    if labels is not None:
+        assert(labels.__class__ is list)
+        assert (len(y) == len(labels))
 
     f = plt.figure()
     for k in range(len(y)):
@@ -26,6 +29,11 @@ def plot_curves(y, x = None):
             X = numpy.arange(len(Y))
         else:
             X = x[k].squeeze()
-        plt.plot(X,Y)
+        if labels is None:
+            lab = 'plot' + str(k)
+        else:
+            lab = labels[k]
+        plt.plot(X,Y, label = lab)
+    plt.legend()
     f.show()
     input('press ENTER to go on...')

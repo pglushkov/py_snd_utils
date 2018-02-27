@@ -55,7 +55,7 @@ def run_main():
 def run_main_world_env(fft_size, tstep):
 
     if len(sys.argv) < 5:
-        raise Exception("Need to specify input wav and sp files to process")
+        raise Exception("Need to specify input wav, sp, mask, f0 files to process")
 
     wavname = sys.argv[1]
     spname = sys.argv[2]
@@ -104,7 +104,7 @@ def run_main_world_env(fft_size, tstep):
 def run_main_reaper_pm_env(fft_time_step, tstep):
 
     if len(sys.argv) < 5:
-        raise Exception("Need to specify input wav and sp files to process")
+        raise Exception("Need to specify input wav, pm, mask, f0 files to process")
 
     wavname = sys.argv[1]
     pmname = sys.argv[2]
@@ -145,13 +145,15 @@ def run_main_reaper_pm_env(fft_time_step, tstep):
     dfb /= numpy.max(numpy.abs(dfb))
 
     (pmarks, _) = utils_reaper.read_pm_from_file(pmtxtname)
-    D_FB_X = pmarks[2:-2, 0]
+    D_FB_X = pmarks[1:-1, 0]
 
     print(dfb.shape)
 
-
-    utils_plot.plot_curves([ pm_chunks[100,:], pm_chunks[101,:], pm_chunks[102,:] ])
+    #utils_plot.plot_curves([ pm_chunks[100,:], pm_chunks[101,:], pm_chunks[102,:] ])
     utils_plot.plot_curves([signal, mask, dfb], [SIG_X, MASK_X, D_FB_X])
+    #print(pm_envs.shape)
+    #print(dfb)
+    #utils_plot.simple_plot(dfb.squeeze(), D_FB_X)
     #utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
 
 def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
@@ -163,19 +165,19 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
 
     # 1st deriv
     dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
-    for k in range(10, fbank_envs.shape[1] - 150):
-        dfb += utils_td.deriv(fbank_envs[:,k].T)
+    for k in range(fbank_envs.shape[1]):
+        dfb += numpy.abs(utils_td.deriv(fbank_envs[:,k].T))
     dfb /= fbank_envs.shape[1]
     D_FB_X = numpy.arange(FB_STEP, FB_DUR - FB_STEP, FB_STEP)
 
 
-    # 2nd deriv
-    dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )
-    for k in range(fbank_envs.shape[1]):
-        tmp = utils_td.deriv(fbank_envs[:, k].T)
-        dfb += utils_td.deriv(tmp)
-    dfb /= fbank_envs.shape[1]
-    D_FB_X = numpy.arange(FB_STEP*2, FB_DUR - FB_STEP*2, FB_STEP)
+    # # 2nd deriv
+    # dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )
+    # for k in range(fbank_envs.shape[1]):
+    #     tmp = utils_td.deriv(fbank_envs[:, k].T)
+    #     dfb += utils_td.deriv(tmp)
+    # dfb /= fbank_envs.shape[1]
+    # D_FB_X = numpy.arange(FB_STEP*2, FB_DUR - FB_STEP*2, FB_STEP)
 
     #dfb = numpy.diff(fbank_envs[:,2])
     #D_FB_X = numpy.arange( 0, FB_DUR - FB_STEP, FB_STEP )
