@@ -14,7 +14,7 @@ import utils.plot_utils as utils_plot
 import utils.misc_utils as utils_misc
 import utils.reaper_utils as utils_reaper
 
-def run_main():
+def run_main_sgram_env():
 
     if len(sys.argv) <= 1:
         raise Exception("Need to specify input wav-file to process")
@@ -187,7 +187,7 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
 
 if __name__ == '__main__':
 
-    #run_main()
+    #run_main_sgram_env()
 
     #run_main_world_env(1024, 0.005)
 

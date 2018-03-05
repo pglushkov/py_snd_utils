@@ -31,7 +31,7 @@ def get_crest_from_chunks(chunks, use_global_rms = True):
     return res
 
 
-def get_peak_to_peak_ratio(inp):
+def get_peak_to_peak(inp):
     minval = numpy.min(inp)
     maxval = numpy.max(inp)
     return maxval - minval
@@ -41,7 +41,7 @@ def get_peak_to_peak_from_chunks(chunks):
     num_chunks = chunks.shape[0]
     res = numpy.zeros( (num_chunks, 1) )
     for k in range(num_chunks):
-        tmp = get_peak_to_peak_ratio(chunks[k,:])
+        tmp = get_peak_to_peak(chunks[k,:])
         res[k,0] = tmp
     return res
 
@@ -50,7 +50,7 @@ def get_energy(inp):
     return numpy.sum(inp ** 2)
 
 
-def get_energy_for_chunks(chunks):
+def get_energy_from_chunks(chunks):
     num_chunks = chunks.shape[0]
     res = numpy.zeros( (num_chunks, 1) )
     for k in range(num_chunks):
@@ -71,7 +71,7 @@ def deriv(inp):
 
     return res
 
-def get_deriv_for_chunks(chunks):
+def get_deriv_from_chunks(chunks):
     num_chunks = chunks.shape[0]
     res = numpy.zeros( (num_chunks, 1) )
     for k in range(num_chunks):
