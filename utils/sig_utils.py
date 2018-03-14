@@ -11,6 +11,9 @@ def is_row(inp):
 def is_vector(inp):
     return len(inp.shape) == 2 and (inp.shape[0] == 1 or inp.shape[1] == 1)
 
+def is_array(inp):
+    return len(inp.shape) == 1 and len(inp) > 0
+
 def pad_to_multiple_of(signal, chunk_size, path_with = 0.0):
     num_frames = int(numpy.ceil( float(signal.shape[0]) / float(chunk_size) ))
     act_len = num_frames * chunk_size
@@ -55,3 +58,17 @@ def cut_sig_into_chunks(signal, chunk_size, overlap_step = 0, pad_zeros = True):
             num_chunks = int(in_len // chunk_size)
             return signal[0, 0:num_chunks * chunk_size].reshape( (-1, chunk_size))
 
+
+def preserve_shape(inp, ref):
+
+    if is_array(inp):
+        # nothing really to do if this is a plain array that we've got at input
+        return inp
+
+    assert(is_vector(ref))
+    if is_row(ref):
+        return inp.reshape( (1,-1) )
+    elif is_col(ref):
+        return inp.reshape( (-1, 1) )
+    else:
+        raise Exception('ITS IMPOSSIBLE!!! BUGGER OFF!!!')

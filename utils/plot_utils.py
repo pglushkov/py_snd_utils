@@ -13,7 +13,7 @@ def simple_plot(y, x = None):
     f.show()
     input('press ENTER to go on ...')
 
-def plot_curves(y, x = None, labels = None):
+def plot_curves(y, x = None, labels = None, saveto = None):
     assert(y.__class__ is list)
     if x is not None:
         assert(x.__class__ is list)
@@ -35,5 +35,9 @@ def plot_curves(y, x = None, labels = None):
             lab = labels[k]
         plt.plot(X,Y, label = lab)
     plt.legend()
-    f.show()
-    input('press ENTER to go on...')
+
+    if (saveto is not None):
+        plt.savefig(saveto)
+    else:
+        f.show()
+        input('press ENTER to go on...')

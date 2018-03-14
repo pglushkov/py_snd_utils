@@ -45,7 +45,7 @@ def run_main_sgram_env():
     SIG_DUR = sampleperiod * signal.shape[0]
     SIG_X = numpy.arange(0, SIG_DUR, sampleperiod)
 
-    dfb, D_FB_X = estimate_sc_from_envelopes(fbank_envs, samplerate, fft_size)
+    dfb, D_FB_X, _ = estimate_sc_from_envelopes(fbank_envs, samplerate, fft_size)
 
     #utils_plot.simple_plot(signal, SIG_X)
     #utils_plot.plot_curves( [signal, fbank_envs[:,1]], [SIG_X, FB_X] )
@@ -94,7 +94,7 @@ def run_main_world_env(fft_size, tstep):
     spvals = numpy.fromfile(spname, dtype = 'float64')
     fbank_envs = spvals.reshape( (-1, int(fft_size/2 + 1)) )
 
-    dfb, D_FB_X = estimate_sc_from_envelopes(fbank_envs, samplerate, int(tstep * samplerate))
+    dfb, D_FB_X, _ = estimate_sc_from_envelopes(fbank_envs, samplerate, int(tstep * samplerate))
     dfb /= numpy.max(numpy.abs(dfb))
 
     #utils_plot.simple_plot(fbank_envs[100,:])
@@ -141,7 +141,7 @@ def run_main_reaper_pm_env(fft_time_step, tstep):
     pm_chunks = pmvals.reshape( (-1, fft_size) )
     pm_envs = utils_sp.get_spec_envelopes(pm_chunks)
 
-    dfb, D_FB_X = estimate_sc_from_envelopes(pm_envs, samplerate, fft_size)
+    dfb, D_FB_X, _ = estimate_sc_from_envelopes(pm_envs, samplerate, fft_size)
     dfb /= numpy.max(numpy.abs(dfb))
 
     (pmarks, _) = utils_reaper.read_pm_from_file(pmtxtname)
@@ -156,10 +156,10 @@ def run_main_reaper_pm_env(fft_time_step, tstep):
     #utils_plot.simple_plot(dfb.squeeze(), D_FB_X)
     #utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
 
-def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
+def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples):
 
     sampleperiod = 1.0 / samplerate
-    FB_STEP = sampleperiod * tstep
+    FB_STEP = sampleperiod * tstep_samples
     FB_DUR = fbank_envs.shape[0] * FB_STEP
     FB_X = numpy.arange(0, FB_DUR, FB_STEP)
 
@@ -167,9 +167,12 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep):
     dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
     for k in range(fbank_envs.shape[1]):
         dfb += numpy.abs(utils_td.deriv(fbank_envs[:,k].T))
-    dfb /= fbank_envs.shape[1]
+    #dfb /= fbank_envs.shape[1]
     D_FB_X = numpy.arange(FB_STEP, FB_DUR - FB_STEP, FB_STEP)
+    if len(D_FB_X) > dfb.shape[1]:
+        D_FB_X = D_FB_X[0:dfb.shape[1]]
 
+    D_FB_X = D_FB_X.reshape( dfb.shape )
 
     # # 2nd deriv
     # dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )

@@ -78,3 +78,30 @@ def get_deriv_from_chunks(chunks):
         tmp = deriv(chunks[k,:])
         res[k,0] = tmp
     return res
+
+def remove_silence(sig, sil_thr = 0.001):
+
+    assert(utils_sig.is_vector(sig) or utils_sig.is_array(sig))
+
+    tmp = sig.squeeze()
+    tmp = tmp[numpy.abs(tmp) >= sil_thr]
+
+    return utils_sig.preserve_shape(tmp, sig)
+
+def perform_mvn_norm(sig, skip_zeros = False):
+    assert utils_sig.is_vector(sig) or utils_sig.is_array(sig)
+
+    uv_mask = (sig == 0.0)
+    if skip_zeros:
+        tmp_sig = remove_silence(sig, 0.0)
+        mean = numpy.mean(tmp_sig)
+        std = numpy.std(tmp_sig)
+        result = (sig - mean) / std
+        result[uv_mask] = 0.0
+        return result
+    else:
+        mean = numpy.mean(sig)
+        std = numpy.std(sig)
+        result = (sig - mean) / std
+        result[uv_mask] = 0.0
+        return result

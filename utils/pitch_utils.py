@@ -38,7 +38,7 @@ def select_good_extreme_segments(inp, thr):
             if cur_seg[1] - cur_seg[0] > thr:
                 result[cur_seg[0]:cur_seg[1]] = tmp[cur_seg[0]:cur_seg[1]]
                 # MY_DBG
-                print('Taking from {0} to {1}'.format(cur_seg[0], cur_seg[1]))
+                #print('Taking from {0} to {1}'.format(cur_seg[0], cur_seg[1]))
             k = m
             continue
         k += 1
