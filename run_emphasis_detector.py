@@ -53,7 +53,9 @@ def get_default_config():
     res['out_dir'] = ''
     res['detect_hysteresis'] = 0.04 # seconds
     res['debug_mode'] = True # enable/disable additional logging and s#@t
-    res['spec_change_threshold'] = 1.5
+    res['spec_change_threshold'] = 3.0
+    res['spec_change_band_st'] = 500 # hz
+    res['spec_change_band_end'] = 4500  # hz
 
     return res
 
@@ -96,7 +98,8 @@ def run_main_one_file(infile, outfile, maskfile, CFG):
     print('Saving plot to {0}'.format(plotname))
 
     if (CFG['debug_mode']):
-        plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname)
+        plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname,
+                            CFG)
 
     print('All done, press any key ...')
     #input()
@@ -129,37 +132,6 @@ def run_main_proc_dir(indir, outdir, maskdir, CFG):
 
         run_main_one_file(wavname, outname, maskfile, CFG)
 
-        # print("\n\n========================================")
-        # print("Will process file    :     {0}".format(wavname))
-        # print("Will write result to :     {0}".format(outname))
-        #
-        # (detect, detect_time, dbg_stuff) = run_emp_detect(wavname, CFG, silent = True)
-        #
-        # (samplerate, signal) = wav.read(wavname)
-        # signal_time = numpy.arange(len(signal)) / samplerate
-        #
-        # plot_curves_y = [signal/(2.0 ** 15.0), detect]
-        # plot_curves_x = [signal_time, detect_time]
-        # plot_labels = ['input signal', 'detection mask']
-        #
-        # if maskdir is not None:
-        #     print("Will use mask-file :     {0}".format(maskfile))
-        #     (samplerate, mask) = wav.read(maskfile)
-        #     mask = mask / (2.0 ** 15.0)
-        #     mask_time = numpy.arange(len(mask)) / samplerate
-        #     plot_curves_y.append(mask)
-        #     plot_curves_x.append(mask_time)
-        #     plot_labels.append('reference manual mask')
-        #
-        # detected_signal = signal * detect
-        #
-        # print('Saving WAV result to {0}'.format(outname))
-        # wav.write(outname, samplerate, detected_signal)
-        #
-        # plotname = os.path.splitext(outname)[0] + '.png'
-        # utils_plot.plot_curves(plot_curves_y, plot_curves_x, labels = plot_labels, saveto = plotname)
-        # print('Saving plot to {0}'.format(plotname))
-
 def run_emp_detect(wavfile, config, silent = True):
 
     # ATTENTION!!! CURRENTLY NOT IMPLEMENTED!!!
@@ -176,6 +148,12 @@ def run_emp_detect(wavfile, config, silent = True):
     signal = signal / (2.0 ** 15.0)
     signal_no_sil = utils_td.remove_silence(signal, 0.0001)
     std_no_sil = numpy.std(signal_no_sil)
+    rms_no_sil = utils_td.get_rms(signal_no_sil)
+
+    print(numpy.mean(signal_no_sil))
+    print(std_no_sil)
+    print(rms_no_sil)
+
 
     chunk_nsamples = int(config['chunk_size_samples'])
     olap_nsamples = int(config['overlap_samples'])
@@ -210,7 +188,10 @@ def run_emp_detect(wavfile, config, silent = True):
     #utils_plot.plot_curves( [sig_f0 / numpy.max(sig_f0), f0_low, f0_high])
 
     ### =================== SPECTRAL CHANGE
-    (sc_dfb, sc_time) = estimate_sc_from_envelopes(sig_sp.T, samplerate, 0.005 * samplerate)
+    freq_step = samplerate / fft_size
+    band_idx = [int(numpy.round(CFG['spec_change_band_st'] / freq_step)),
+                int(numpy.round(CFG['spec_change_band_end'] / freq_step))]
+    (sc_dfb, sc_time) = estimate_sc_from_envelopes(sig_sp.T, samplerate, 0.005 * samplerate, band = band_idx)
     sc_res = (numpy.abs(sc_dfb) < config['spec_change_threshold'] * std_no_sil).astype('float')
 
     sc_res = sc_dfb * sc_res
@@ -219,7 +200,7 @@ def run_emp_detect(wavfile, config, silent = True):
 
     ### =================== PEAK-to_PEAK
     p2p = utils_td.get_peak_to_peak_from_chunks(sig_chunks)
-    p2p = (p2p > config['peak_to_peak_thr_std'] * std_no_sil).astype('float')
+    p2p_det = (p2p > config['peak_to_peak_thr_std'] * std_no_sil).astype('float') * p2p
     # MY_DBG
     #utils_plot.plot_curves( [signal, p2p], [signal_time, sig_chunks_time])
 
@@ -231,7 +212,7 @@ def run_emp_detect(wavfile, config, silent = True):
     ### =================== FINALIZING RESULTS
     DETECT_SC = numpy.interp(signal_time.squeeze(), sc_time.squeeze(), sc_res.squeeze())
     DETECT_VO = numpy.interp(signal_time.squeeze(), sig_f0_time.squeeze(), voiced.squeeze())
-    DETECT_PP = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p.squeeze())
+    DETECT_PP = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p_det.squeeze())
     DETECT_EX = numpy.interp(signal_time.squeeze(), sig_f0_time.squeeze(), f0_extr.squeeze())
 
     RESULT_MASK = (DETECT_SC > 0) * (DETECT_VO > 0) * (DETECT_PP > 0) * (DETECT_EX > 0)
@@ -240,8 +221,12 @@ def run_emp_detect(wavfile, config, silent = True):
     if not silent:
         utils_plot.plot_curves( [signal, RESULT_MASK], [signal_time, signal_time])
 
-    dbg_stuff = {'spec_change' : DETECT_SC, 'voiced' : DETECT_VO, 'peak2peak' : DETECT_PP,
-        'f0-extreme' : DETECT_EX}
+    SC_DFB = numpy.interp(signal_time.squeeze(), sc_time.squeeze(), sc_dfb.squeeze())
+    P2P = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p.squeeze())
+
+    dbg_stuff = {'spec_change_detect' : DETECT_SC, 'voiced_detect' : DETECT_VO, 'peak2peak_detect' : DETECT_PP,
+        'f0-extreme_detect' : DETECT_EX, 'threshold_base' : std_no_sil, 'spec_change' : SC_DFB,
+        'peak2peak' : P2P}
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
@@ -260,7 +245,7 @@ def update_detection_results(mask, samplerate, detect_hysteresis):
 
     return result
 
-def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname):
+def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname, CFG):
     print('\n.................................')
     print('DEBUG mode enabled, will save some additional info: {0}'.format(str(dbg_stuff.keys())))
     base_plot_y = plot_curves_y
@@ -269,20 +254,30 @@ def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal
     del base_plot_x[1]
     base_plot_labels = plot_labels
     del base_plot_labels[1]
+
+    threshold_base = dbg_stuff['threshold_base']
+
     plotname = os.path.splitext(outname)[0] + '_spec_change.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['spec_change']],
-                           base_plot_x + [signal_time], labels=base_plot_labels + ['spec_change'],
+    thr_y = CFG['spec_change_threshold'] * threshold_base * numpy.ones( len(signal_time))
+    utils_plot.plot_curves(base_plot_y + [dbg_stuff['spec_change'], thr_y],
+                           base_plot_x + [signal_time, signal_time],
+                           labels=base_plot_labels + ['spec_change', 'threshold'],
                            saveto=plotname)
+
     plotname = os.path.splitext(outname)[0] + '_voiced.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['voiced']],
+    utils_plot.plot_curves(base_plot_y + [dbg_stuff['voiced_detect']],
                            base_plot_x + [signal_time], labels=base_plot_labels + ['voiced'],
                            saveto=plotname)
+
     plotname = os.path.splitext(outname)[0] + '_p2p.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2peak']],
-                           base_plot_x + [signal_time], labels=base_plot_labels + ['peak2peak'],
+    thr_y = CFG['peak_to_peak_thr_std'] * threshold_base * numpy.ones(len(signal_time))
+    utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2peak'], thr_y],
+                           base_plot_x + [signal_time, signal_time],
+                           labels=base_plot_labels + ['peak2peak', 'threshold'],
                            saveto=plotname)
+
     plotname = os.path.splitext(outname)[0] + '_f0_extr.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['f0-extreme']],
+    utils_plot.plot_curves(base_plot_y + [dbg_stuff['f0-extreme_detect']],
                            base_plot_x + [signal_time], labels=base_plot_labels + ['f0-extreme'],
                            saveto=plotname)
 
@@ -304,8 +299,6 @@ if __name__ == '__main__':
     mode = ARGS.mode
     if mode is None:
         mode = 'file'
-
-    #CONTINUE FROM FAILED DETECTIONS AND SEE WHAT IS WHAT
 
     if mode == 'file':
         # run everything to process one input file only

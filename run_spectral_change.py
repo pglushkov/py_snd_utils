@@ -156,7 +156,9 @@ def run_main_reaper_pm_env(fft_time_step, tstep):
     #utils_plot.simple_plot(dfb.squeeze(), D_FB_X)
     #utils_plot.plot_curves([f0data, mask, dfb], [F0_X, MASK_X, D_FB_X])
 
-def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples):
+def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples, band = None):
+
+    # expect 'fbank_envs' to be [num_chunks, num_bins] shape
 
     sampleperiod = 1.0 / samplerate
     FB_STEP = sampleperiod * tstep_samples
@@ -164,9 +166,16 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples):
     FB_X = numpy.arange(0, FB_DUR, FB_STEP)
 
     # 1st deriv
-    dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
-    for k in range(fbank_envs.shape[1]):
-        dfb += numpy.abs(utils_td.deriv(fbank_envs[:,k].T))
+    if band is None:
+        dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
+        for k in range(fbank_envs.shape[1]):
+            dfb += numpy.abs(utils_td.deriv(fbank_envs[:,k].T))
+    else:
+        assert(len(band) == 2)
+        dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
+        print(dfb.shape)
+        for k in range(band[0], band[1]):
+            dfb += numpy.abs(utils_td.deriv(fbank_envs[:, k].T))
     #dfb /= fbank_envs.shape[1]
     D_FB_X = numpy.arange(FB_STEP, FB_DUR - FB_STEP, FB_STEP)
     if len(D_FB_X) > dfb.shape[1]:
