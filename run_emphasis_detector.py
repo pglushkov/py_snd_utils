@@ -52,10 +52,10 @@ def get_default_config():
     res['peak_to_peak_thr_std'] = 7.0
     res['out_dir'] = ''
     res['detect_hysteresis'] = 0.04 # seconds
-    res['debug_mode'] = True # enable/disable additional logging and s#@t
+    res['debug_mode'] = False # enable/disable additional logging and s#@t
     res['spec_change_threshold'] = 3.0
-    res['spec_change_band_st'] = 500 # hz
-    res['spec_change_band_end'] = 4500  # hz
+    res['spec_change_band_st'] = 100 # hz
+    res['spec_change_band_end'] = 3500  # hz
 
     return res
 
@@ -142,6 +142,7 @@ def run_emp_detect(wavfile, config, silent = True):
     # (DONE) 4) pitch maxima (probably relatively to it's average value)
 
     (samplerate, signal) = wav.read(wavfile)
+    signal = signal - numpy.mean(signal) # just in case, cause some inputs are really screwed
     sampleperiod = 1.0 / samplerate
     signal_time = numpy.arange(len(signal)) * sampleperiod
     signal = signal.reshape( (-1, 1) )
@@ -230,7 +231,7 @@ def run_emp_detect(wavfile, config, silent = True):
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
-def update_detection_results(mask, samplerate, detect_hysteresis):
+def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshold):
     assert(utils_sig.is_array(mask))
     hyst_step = int(numpy.round(detect_hysteresis * samplerate))
     sig_len = len(mask)
@@ -243,7 +244,32 @@ def update_detection_results(mask, samplerate, detect_hysteresis):
             continue
         idx += 1
 
+    detect_segs = segs_list_from_signal(result)
+    detect_segs = merge_segs(detect_segs, merge_threshold)
+    result = segs_list_to_signal(detect_segs)
+
     return result
+
+def segs_list_from_signal(sig):
+    idx = 0
+    assert(utils_sig.is_array(sig))
+    res = []
+    while (idx < len(sig)):
+        if (sig[idx] > 0):
+            st = idx
+            while(sig[idx] > 0):
+                idx += 1
+            end = idx
+            res.append[ {'st':st, 'end':end} ]
+            continue
+        idx += 1
+    return res
+
+def segs_list_to_signal(segs, total_len):
+    res = numpy.zeros(total_len)
+    for seg in segs:
+        res[seg['st']:seg['end']] = 1
+    return res
 
 def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname, CFG):
     print('\n.................................')
@@ -295,6 +321,14 @@ if __name__ == '__main__':
         CFG = get_default_config()
     else:
         CFG = get_config_from_json(ARGS.cfg)
+
+    1)  GO ON WITH SEGMENTS MERGING, IDEA IS TO HAVE A CERTAIN THRESHOLD AND MERGE SEGMENTS THAT ARE
+        CLOSER TO EACH OTHER THEN THIS THRESHOLD. IF A SEGMENT IS TOO SHORT AND HAS NO NEIGBOURS TO
+        BE MERGED TO - DETET SUCH A SEGMENT
+    2)  PLAY AROUND WITH PEAK-TO-PEAK CRITERIA, IT PROBABLY MIGHT BE REDUCED TO INCLUDE MORE SEGMENTS
+        THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE
+    3)  PLAY AROUND WITH MULTIPLICATION OF P2P BY SPEC_CHANGE, SEE IF THIS COMBINED CRITERIA MIGHT DO
+        SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC
 
     mode = ARGS.mode
     if mode is None:
