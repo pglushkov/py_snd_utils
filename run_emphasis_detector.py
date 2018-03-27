@@ -51,13 +51,20 @@ def get_default_config():
     res['f0_time_step'] = 0.005 # in seconds
     res['peak_to_peak_thr_std'] = 7.0
     res['out_dir'] = ''
-    res['detect_hysteresis'] = 0.04 # seconds
+    res['detect_hysteresis'] = 0.0001 # seconds
+    res['detect_merge_threshold'] = 0.02
     res['debug_mode'] = False # enable/disable additional logging and s#@t
     res['spec_change_threshold'] = 3.0
     res['spec_change_band_st'] = 100 # hz
     res['spec_change_band_end'] = 3500  # hz
 
     return res
+
+def dump_config(cfg, filename):
+    cfgstr = json.dumps(cfg, indent = 2)
+    # jsonobj = json.loads(cfgstr)
+    with open(filename, 'w') as f:
+        f.write(cfgstr)
 
 def run_main_one_file(infile, outfile, maskfile, CFG):
 
@@ -217,7 +224,10 @@ def run_emp_detect(wavfile, config, silent = True):
     DETECT_EX = numpy.interp(signal_time.squeeze(), sig_f0_time.squeeze(), f0_extr.squeeze())
 
     RESULT_MASK = (DETECT_SC > 0) * (DETECT_VO > 0) * (DETECT_PP > 0) * (DETECT_EX > 0)
-    RESULT_MASK = update_detection_results(RESULT_MASK, samplerate, config['detect_hysteresis'])
+    RESULT_MASK = update_detection_results(RESULT_MASK, samplerate, config['detect_hysteresis'],
+                                           config['detect_merge_threshold'])
+    # one more time make sure unvoiced segs are not detected
+    RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
 
     if not silent:
         utils_plot.plot_curves( [signal, RESULT_MASK], [signal_time, signal_time])
@@ -234,6 +244,9 @@ def run_emp_detect(wavfile, config, silent = True):
 def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshold):
     assert(utils_sig.is_array(mask))
     hyst_step = int(numpy.round(detect_hysteresis * samplerate))
+    merge_step = int(numpy.round(merge_threshold * samplerate))
+    # MY_DBG
+    print("hyst_step = {0}  merge_step = {1} ...".format(hyst_step, merge_step))
     sig_len = len(mask)
     idx = 0
     result = numpy.copy(mask)
@@ -245,8 +258,8 @@ def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshol
         idx += 1
 
     detect_segs = segs_list_from_signal(result)
-    detect_segs = merge_segs(detect_segs, merge_threshold)
-    result = segs_list_to_signal(detect_segs)
+    detect_segs = merge_segs(detect_segs, min_len=hyst_step, merge_thr=merge_step)
+    result = segs_list_to_signal(detect_segs, len(result))
 
     return result
 
@@ -260,9 +273,59 @@ def segs_list_from_signal(sig):
             while(sig[idx] > 0):
                 idx += 1
             end = idx
-            res.append[ {'st':st, 'end':end} ]
+            res.append( {'st':st, 'end':end} )
             continue
         idx += 1
+    return res
+
+def merge_segs(segs, min_len, merge_thr):
+
+    def should_delete(seg):
+        return (seg['end'] - seg['st']) <= min_len
+
+    def can_merge(lst, idx1, idx2):
+        assert idx1 != idx2
+        if idx1 > idx2:
+            return (lst[idx1]['st'] - lst[idx2]['end']) < merge_thr
+        else:
+            return (lst[idx2]['st'] - lst[idx1]['end']) < merge_thr
+
+    def merge_segs(lst, from_which, to_which):
+        assert(from_which != to_which)
+        lst[to_which]['segs'] += lst[from_which]['segs']
+        lst[to_which]['st'] = min(lst[to_which]['st'], lst[from_which]['st'])
+        lst[to_which]['end'] = max(lst[to_which]['end'], lst[from_which]['end'])
+        lst[from_which]['segs'] = []
+
+    wrk_segs = []
+    k = 0
+    for seg in segs:
+        wrk_segs.append( {'st':seg['st'], 'end':seg['end'], 'segs':[k]} )
+        k += 1
+
+    for k in range(len(wrk_segs)):
+
+        # handle last
+        if k == (len(wrk_segs) - 1):
+            if can_merge(wrk_segs, idx1 = k, idx2 = k - 1):
+                merge_segs(wrk_segs, from_which = k, to_which = k - 1)
+            else:
+                if should_delete(wrk_segs[k]):
+                    wrk_segs[k]['segs'] = []
+            continue
+
+        # handle the rest
+        if can_merge(wrk_segs, idx1 = k, idx2 = k + 1):
+            merge_segs(wrk_segs, from_which = k, to_which = k + 1)
+        else:
+            if should_delete(wrk_segs[k]):
+                wrk_segs[k]['segs'] = []
+
+    res = []
+    for seg in wrk_segs:
+        if seg['segs']:
+            res.append(seg)
+
     return res
 
 def segs_list_to_signal(segs, total_len):
@@ -317,22 +380,25 @@ if __name__ == '__main__':
     output = ARGS.o
     mask = ARGS.m
 
-    if ARGS.cfg is None:
-        CFG = get_default_config()
-    else:
-        CFG = get_config_from_json(ARGS.cfg)
-
-    1)  GO ON WITH SEGMENTS MERGING, IDEA IS TO HAVE A CERTAIN THRESHOLD AND MERGE SEGMENTS THAT ARE
-        CLOSER TO EACH OTHER THEN THIS THRESHOLD. IF A SEGMENT IS TOO SHORT AND HAS NO NEIGBOURS TO
-        BE MERGED TO - DETET SUCH A SEGMENT
-    2)  PLAY AROUND WITH PEAK-TO-PEAK CRITERIA, IT PROBABLY MIGHT BE REDUCED TO INCLUDE MORE SEGMENTS
-        THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE
-    3)  PLAY AROUND WITH MULTIPLICATION OF P2P BY SPEC_CHANGE, SEE IF THIS COMBINED CRITERIA MIGHT DO
-        SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC
+    # 1)  GO ON WITH SEGMENTS MERGING, IDEA IS TO HAVE A CERTAIN THRESHOLD AND MERGE SEGMENTS THAT ARE
+    #     CLOSER TO EACH OTHER THEN THIS THRESHOLD. IF A SEGMENT IS TOO SHORT AND HAS NO NEIGBOURS TO
+    #     BE MERGED TO - DETET SUCH A SEGMENT
+    # 2)  PLAY AROUND WITH PEAK-TO-PEAK CRITERIA, IT PROBABLY MIGHT BE REDUCED TO INCLUDE MORE SEGMENTS
+    #     THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE
+    # 3)  PLAY AROUND WITH MULTIPLICATION OF P2P BY SPEC_CHANGE, SEE IF THIS COMBINED CRITERIA MIGHT DO
+    #     SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC
 
     mode = ARGS.mode
     if mode is None:
         mode = 'file'
+
+    if ARGS.cfg is None:
+        CFG = get_default_config()
+        cfg_filename = os.path.join(output, 'used_config.cfg') if mode == 'dir' else 'used_config.cfg'
+        dump_config(CFG, cfg_filename)
+    else:
+        CFG = get_config_from_json(ARGS.cfg)
+
 
     if mode == 'file':
         # run everything to process one input file only
@@ -342,3 +408,4 @@ if __name__ == '__main__':
         run_main_proc_dir(input, output, mask, CFG)
     else:
         raise Exception('ERROR : some unknown mode scecified')
+
