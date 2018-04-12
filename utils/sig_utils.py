@@ -72,3 +72,12 @@ def preserve_shape(inp, ref):
         return inp.reshape( (-1, 1) )
     else:
         raise Exception('ITS IMPOSSIBLE!!! BUGGER OFF!!!')
+
+def clean_undef_floats(sig, val = 0.0):
+    assert(is_array(sig))
+
+    res = numpy.copy(sig);
+    res[sig == float('Nan')] = val
+    res[sig == float('Inf')] = val
+
+    return res;

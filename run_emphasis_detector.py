@@ -49,14 +49,16 @@ def get_default_config():
     res['f0_extr_thr'] = 0.1 # in std-devs
     res['f0_extr_len'] = 0.060 # in seconds
     res['f0_time_step'] = 0.005 # in seconds
-    res['peak_to_peak_thr_std'] = 7.0
+    res['peak_to_peak_thr_std'] = 4.0
     res['out_dir'] = ''
-    res['detect_hysteresis'] = 0.0001 # seconds
-    res['detect_merge_threshold'] = 0.02
+    res['detect_hysteresis'] = 0.09 # seconds
+    res['detect_merge_threshold'] = 0.00
     res['debug_mode'] = False # enable/disable additional logging and s#@t
     res['spec_change_threshold'] = 3.0
     res['spec_change_band_st'] = 100 # hz
     res['spec_change_band_end'] = 3500  # hz
+    res['detect_type'] = 1
+    res['peak2change_thr'] = 1.3 # in some imaginary unknown logarithmic twisted units
 
     return res
 
@@ -140,6 +142,17 @@ def run_main_proc_dir(indir, outdir, maskdir, CFG):
         run_main_one_file(wavname, outname, maskfile, CFG)
 
 def run_emp_detect(wavfile, config, silent = True):
+
+    dtype = config['detect_type']
+
+    if dtype == 1:
+        return run_emp_detect_type1(wavfile, config, silent)
+    elif dtype == 2:
+        return run_emp_detect_type2(wavfile, config, silent)
+    else:
+        raise Exception('Unknown detection type specified!!! ({0})'.format(dtype))
+
+def run_emp_detect_type1(wavfile, config, silent = True):
 
     # ATTENTION!!! CURRENTLY NOT IMPLEMENTED!!!
     # need to work with
@@ -238,6 +251,110 @@ def run_emp_detect(wavfile, config, silent = True):
     dbg_stuff = {'spec_change_detect' : DETECT_SC, 'voiced_detect' : DETECT_VO, 'peak2peak_detect' : DETECT_PP,
         'f0-extreme_detect' : DETECT_EX, 'threshold_base' : std_no_sil, 'spec_change' : SC_DFB,
         'peak2peak' : P2P}
+
+    return (RESULT_MASK, signal_time, dbg_stuff)
+
+def run_emp_detect_type2(wavfile, config, silent = True):
+
+    # ATTENTION!!! CURRENTLY NOT IMPLEMENTED!!!
+    # need to work with
+    # (DONE) 1) spectral change (basically envelope stability sort of)
+    # (DONE) 2) peak-to-peak rate
+    # (DONE) 3) syllable duration (basically a non-interrupted pitch segment)
+    # (DONE) 4) pitch maxima (probably relatively to it's average value)
+
+    (samplerate, signal) = wav.read(wavfile)
+    signal = signal - numpy.mean(signal) # just in case, cause some inputs are really screwed
+    sampleperiod = 1.0 / samplerate
+    signal_time = numpy.arange(len(signal)) * sampleperiod
+    signal = signal.reshape( (-1, 1) )
+    signal = signal / (2.0 ** 15.0)
+    signal_no_sil = utils_td.remove_silence(signal, 0.0001)
+    std_no_sil = numpy.std(signal_no_sil)
+    rms_no_sil = utils_td.get_rms(signal_no_sil)
+
+    print(numpy.mean(signal_no_sil))
+    print(std_no_sil)
+    print(rms_no_sil)
+
+
+    chunk_nsamples = int(config['chunk_size_samples'])
+    olap_nsamples = int(config['overlap_samples'])
+
+    fft_size = int(2 ** numpy.ceil( numpy.log2(chunk_nsamples)))
+    env_size = int(fft_size / 2 + 1)
+
+    sig_chunks = utils_sig.cut_sig_into_chunks(signal.T, chunk_nsamples, overlap_step = olap_nsamples,
+        pad_zeros = True)
+    sig_chunks_num = sig_chunks.shape[0]
+    sig_chunks_tstep = olap_nsamples / samplerate
+    sig_chunks_time = numpy.arange(sig_chunks_num) * sig_chunks_tstep
+
+    wrld_res = run_world_by_reaper(wavfile, config['wrk_path'], config['reaper_path'], config['world_path'])
+
+    sig_f0 = numpy.fromfile(wrld_res[0]).reshape( (-1, 1))
+    sig_sp = numpy.fromfile(wrld_res[1]).reshape( (env_size, -1))
+    sig_f0_time = numpy.arange(sig_f0.shape[0]) * config['f0_time_step']
+    sig_f0_no_sil = utils_td.remove_silence(sig_f0, 0.0)
+    f0_std_no_sil = numpy.std(sig_f0_no_sil)
+
+    #print(sig_f0.shape)
+    #print(sig_sp.shape)
+
+    ### =================== PITCH EXTREMUMS
+    f0_extr = utils_pitch.get_f0_extreme_areas(sig_f0, config['f0_extr_thr'],
+                                               config['f0_extr_len'] / config['f0_time_step'])
+    f0_low = f0_extr[0] * (f0_extr[0] > 0).astype('int')
+    f0_high = f0_extr[1] * (f0_extr[1] > 0).astype('int')
+    f0_extr = utils_td.perform_mvn_norm( (f0_low + f0_high), skip_zeros = True)
+    # MY_DBG
+    #utils_plot.plot_curves( [sig_f0 / numpy.max(sig_f0), f0_low, f0_high])
+
+    ### =================== SPECTRAL CHANGE
+    freq_step = samplerate / fft_size
+    band_idx = [int(numpy.round(CFG['spec_change_band_st'] / freq_step)),
+                int(numpy.round(CFG['spec_change_band_end'] / freq_step))]
+    (sc_dfb, sc_time) = estimate_sc_from_envelopes(sig_sp.T, samplerate, 0.005 * samplerate, band = band_idx)
+
+    # MY_DBG
+    #utils_plot.plot_curves([signal, sc_res], [signal_time, sc_time])
+
+    ### =================== PEAK-to_PEAK
+    p2p = utils_td.get_peak_to_peak_from_chunks(sig_chunks)
+    # MY_DBG
+    #utils_plot.plot_curves( [signal, p2p], [signal_time, sig_chunks_time])
+
+    ### =================== VOICED MASK
+    voiced = (sig_f0.squeeze() > 0.0).astype('int')
+    # MY_DBG
+    #utils_plot.plot_curves( [sig_f0 / numpy.max(sig_f0), voiced], [sig_f0_time, sig_f0_time])
+
+    # PEAK-TO-CHANGE
+    p2p_int = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p.squeeze())
+    sc_dfb_int = numpy.interp(signal_time.squeeze(), sc_time.squeeze(), sc_dfb.squeeze())
+    p2sc = numpy.log(p2p_int) - numpy.log(sc_dfb_int)
+    p2sc = utils_sig.clean_undef_floats(p2sc)
+
+    ### =================== FINALIZING RESULTS
+    DETECT_VO = numpy.interp(signal_time.squeeze(), sig_f0_time.squeeze(), voiced.squeeze())
+    DETECT_EX = numpy.interp(signal_time.squeeze(), sig_f0_time.squeeze(), f0_extr.squeeze())
+    DETECT_P2SC = p2sc > config['peak2change_thr']
+
+    RESULT_MASK = (DETECT_P2SC > 0) * (DETECT_VO > 0) * (DETECT_EX > 0)
+    #RESULT_MASK = update_detection_results(RESULT_MASK, samplerate, config['detect_hysteresis'],
+    #                                       config['detect_merge_threshold'])
+    # one more time make sure unvoiced segs are not detected
+    #RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
+
+    if not silent:
+        utils_plot.plot_curves( [signal, RESULT_MASK], [signal_time, signal_time])
+
+    SC_DFB = numpy.interp(signal_time.squeeze(), sc_time.squeeze(), sc_dfb.squeeze())
+    P2P = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p.squeeze())
+
+    dbg_stuff = {'peak2schange_detect' : DETECT_P2SC, 'voiced_detect' : DETECT_VO,
+        'f0-extreme_detect' : DETECT_EX, 'threshold_base' : std_no_sil, 'spec_change' : SC_DFB,
+        'peak2peak' : P2P, 'peak2schange' : p2sc}
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
@@ -346,28 +463,46 @@ def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal
 
     threshold_base = dbg_stuff['threshold_base']
 
-    plotname = os.path.splitext(outname)[0] + '_spec_change.png'
-    thr_y = CFG['spec_change_threshold'] * threshold_base * numpy.ones( len(signal_time))
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['spec_change'], thr_y],
+    if 'spec_change' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_spec_change.png'
+        thr_y = CFG['spec_change_threshold'] * threshold_base * numpy.ones( len(signal_time))
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['spec_change'], thr_y],
                            base_plot_x + [signal_time, signal_time],
                            labels=base_plot_labels + ['spec_change', 'threshold'],
                            saveto=plotname)
 
-    plotname = os.path.splitext(outname)[0] + '_voiced.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['voiced_detect']],
+    if 'voiced_detect' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_voiced.png'
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['voiced_detect']],
                            base_plot_x + [signal_time], labels=base_plot_labels + ['voiced'],
                            saveto=plotname)
 
-    plotname = os.path.splitext(outname)[0] + '_p2p.png'
-    thr_y = CFG['peak_to_peak_thr_std'] * threshold_base * numpy.ones(len(signal_time))
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2peak'], thr_y],
+    if 'peak2peak' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_p2p.png'
+        thr_y = CFG['peak_to_peak_thr_std'] * threshold_base * numpy.ones(len(signal_time))
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2peak'], thr_y],
                            base_plot_x + [signal_time, signal_time],
                            labels=base_plot_labels + ['peak2peak', 'threshold'],
                            saveto=plotname)
 
-    plotname = os.path.splitext(outname)[0] + '_f0_extr.png'
-    utils_plot.plot_curves(base_plot_y + [dbg_stuff['f0-extreme_detect']],
+    if 'f0-extreme_detect' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_f0_extr.png'
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['f0-extreme_detect']],
                            base_plot_x + [signal_time], labels=base_plot_labels + ['f0-extreme'],
+                           saveto=plotname)
+
+    if 'peak2schange_detect' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_p2sc_detect.png'
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2schange_detect']],
+                           base_plot_x + [signal_time], labels=base_plot_labels + ['peak2schange_detect'],
+                           saveto=plotname)
+
+    if 'peak2schange' in dbg_stuff.keys():
+        plotname = os.path.splitext(outname)[0] + '_p2sc.png'
+        thr_y2 = CFG['peak2change_thr'] * threshold_base * numpy.ones(len(signal_time))
+        utils_plot.plot_curves(base_plot_y + [dbg_stuff['peak2schange'], thr_y2],
+                           base_plot_x + [signal_time, signal_time],
+                           labels=base_plot_labels + ['peak2schange', 'threshold'],
                            saveto=plotname)
 
 if __name__ == '__main__':
@@ -382,15 +517,21 @@ if __name__ == '__main__':
 
     # 1)  GO ON WITH SEGMENTS MERGING, IDEA IS TO HAVE A CERTAIN THRESHOLD AND MERGE SEGMENTS THAT ARE
     #     CLOSER TO EACH OTHER THEN THIS THRESHOLD. IF A SEGMENT IS TOO SHORT AND HAS NO NEIGBOURS TO
-    #     BE MERGED TO - DETET SUCH A SEGMENT
+    #     BE MERGED TO - DROP SUCH A SEGMENT (done, experimenting with thresholds)
     # 2)  PLAY AROUND WITH PEAK-TO-PEAK CRITERIA, IT PROBABLY MIGHT BE REDUCED TO INCLUDE MORE SEGMENTS
-    #     THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE
+    #     THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE (done, a bit
+    #     better results)
     # 3)  PLAY AROUND WITH MULTIPLICATION OF P2P BY SPEC_CHANGE, SEE IF THIS COMBINED CRITERIA MIGHT DO
-    #     SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC
+    #     SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC (done, detection is not as good,
+    #     will see how it might be used for assesment)
 
     mode = ARGS.mode
     if mode is None:
         mode = 'file'
+
+    if mode == 'dir':
+        if not os.path.exists(output):
+            os.makedirs(output)
 
     if ARGS.cfg is None:
         CFG = get_default_config()
