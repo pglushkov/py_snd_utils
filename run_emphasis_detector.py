@@ -527,15 +527,8 @@ if __name__ == '__main__':
     output = ARGS.o
     mask = ARGS.m
 
-    # 1)  GO ON WITH SEGMENTS MERGING, IDEA IS TO HAVE A CERTAIN THRESHOLD AND MERGE SEGMENTS THAT ARE
-    #     CLOSER TO EACH OTHER THEN THIS THRESHOLD. IF A SEGMENT IS TOO SHORT AND HAS NO NEIGBOURS TO
-    #     BE MERGED TO - DROP SUCH A SEGMENT (done, experimenting with thresholds)
-    # 2)  PLAY AROUND WITH PEAK-TO-PEAK CRITERIA, IT PROBABLY MIGHT BE REDUCED TO INCLUDE MORE SEGMENTS
-    #     THAT HAVE LOWER MAGNITUDE BUT ARE STILL QUITE VOCAL AND PROMINENT IN THE UTTERANCE (done, a bit
-    #     better results)
-    # 3)  PLAY AROUND WITH MULTIPLICATION OF P2P BY SPEC_CHANGE, SEE IF THIS COMBINED CRITERIA MIGHT DO
-    #     SOME GOOD. AS A DETECTOR OR MAYBE SOME SEGMENTS ASSESMENT METRIC (done, detection is not as good,
-    #     will see how it might be used for assesment)
+    # Implement a scan-segment adjustment routine which will select a segment with detected emphasis and
+    # will center a window of fixed lengthe somethere alongst it. Probably by max of energy or smth alike.
 
     mode = ARGS.mode
     if mode is None:
