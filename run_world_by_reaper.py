@@ -17,6 +17,12 @@ import utils.world_utils as utils_world
 
 def run_world_by_reaper(wav_name, out_path, rpath = None, wpath = None):
 
+    if sys.platform == 'win32':
+        # world and reaper are currently not supplied in binary form for Windows,
+        # will try to see if needed files had already been created previously. If not -
+        # return 'None' values
+        return try_search_previous_results(wav_name, out_path)
+
     REAPER_PATH = './bin_utils/reaper' if rpath is None else rpath
     WORLD_PATH = './bin_utils/world_analysis' if wpath is None else wpath
 
@@ -35,6 +41,34 @@ def run_world_by_reaper(wav_name, out_path, rpath = None, wpath = None):
     print("Results are : {0}, {1}, {2}".format(wrld_result[0], wrld_result[1], wrld_result[2]))
 
     return wrld_result
+
+def try_search_previous_results(wav_name, out_path):
+    fid = os.path.splitext(os.path.basename(wav_name))[0]
+
+    f0_fname = fid + '_world.f0'
+    ap_fname = fid + '_world.ap'
+    sp_fname = fid + '_world.sp'
+
+    if os.path.isfile(f0_fname):
+        print("ERROR : could not get WORLD data for file {0}...".format(f0_fname))
+        f0_fname = None
+    else:
+        f0_fname = os.path.join(out_path, f0_fname)
+
+    if os.path.isfile(ap_fname):
+        print("ERROR : could not get WORLD data for file {0}...".format(ap_fname))
+        ap_fname = None
+    else:
+        ap_fname = os.path.join(out_path, ap_fname)
+
+    if os.path.isfile(sp_fname):
+        print("ERROR : could not get WORLD data for file {0}...".format(sp_fname))
+        sp_fname = None
+    else:
+        sp_fname = os.path.join(out_path, sp_fname)
+
+    return (f0_fname, sp_fname, ap_fname)
+
 
 if __name__ == '__main__':
 

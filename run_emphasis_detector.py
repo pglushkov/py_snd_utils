@@ -51,14 +51,17 @@ def get_default_config():
     res['f0_time_step'] = 0.005 # in seconds
     res['peak_to_peak_thr_std'] = 4.0
     res['out_dir'] = ''
-    res['detect_hysteresis'] = 0.09 # seconds
-    res['detect_merge_threshold'] = 0.00
+    res['detect_hysteresis'] = 0.0001 # seconds
+    res['detect_merge_threshold'] = 0.120
+    res['detect_min_len'] = 0.02
+    res['detect_max_len'] = 0.3
     res['debug_mode'] = False # enable/disable additional logging and s#@t
     res['spec_change_threshold'] = 3.0
     res['spec_change_band_st'] = 100 # hz
     res['spec_change_band_end'] = 3500  # hz
     res['detect_type'] = 1
     res['peak2change_thr'] = 1.3 # in some imaginary unknown logarithmic twisted units
+    res['scan_region_len'] = 0.3 # seconds, length of window that we will position over detected regions and scan in the end
 
     return res
 
@@ -154,8 +157,6 @@ def run_emp_detect(wavfile, config, silent = True):
 
 def run_emp_detect_type1(wavfile, config, silent = True):
 
-    # ATTENTION!!! CURRENTLY NOT IMPLEMENTED!!!
-    # need to work with
     # (DONE) 1) spectral change (basically envelope stability sort of)
     # (DONE) 2) peak-to-peak rate
     # (DONE) 3) syllable duration (basically a non-interrupted pitch segment)
@@ -189,6 +190,9 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     sig_chunks_time = numpy.arange(sig_chunks_num) * sig_chunks_tstep
 
     wrld_res = run_world_by_reaper(wavfile, config['wrk_path'], config['reaper_path'], config['world_path'])
+
+    if (wrld_res[0] is None or wrld_res[1] is None or wrld_res[2] is None):
+        raise Exception('LEFUCKUP')
 
     sig_f0 = numpy.fromfile(wrld_res[0]).reshape( (-1, 1))
     sig_sp = numpy.fromfile(wrld_res[1]).reshape( (env_size, -1))
@@ -238,7 +242,8 @@ def run_emp_detect_type1(wavfile, config, silent = True):
 
     RESULT_MASK = (DETECT_SC > 0) * (DETECT_VO > 0) * (DETECT_PP > 0) * (DETECT_EX > 0)
     RESULT_MASK = update_detection_results(RESULT_MASK, samplerate, config['detect_hysteresis'],
-                                           config['detect_merge_threshold'])
+                                           config['detect_merge_threshold'], config['detect_min_len'],
+                                           config['detect_max_len'])
     # one more time make sure unvoiced segs are not detected
     RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
 
@@ -358,10 +363,12 @@ def run_emp_detect_type2(wavfile, config, silent = True):
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
-def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshold):
+def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshold, min_len, max_len):
     assert(utils_sig.is_array(mask))
     hyst_step = int(numpy.round(detect_hysteresis * samplerate))
     merge_step = int(numpy.round(merge_threshold * samplerate))
+    min_keep_len = int(numpy.round(min_len * samplerate))
+    max_keep_len = int(numpy.round(max_len * samplerate))
     # MY_DBG
     print("hyst_step = {0}  merge_step = {1} ...".format(hyst_step, merge_step))
     sig_len = len(mask)
@@ -375,7 +382,8 @@ def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshol
         idx += 1
 
     detect_segs = segs_list_from_signal(result)
-    detect_segs = merge_segs(detect_segs, min_len=hyst_step, merge_thr=merge_step)
+    detect_segs = merge_segs(detect_segs, min_len=min_keep_len, max_len = max_keep_len,
+                             merge_thr=merge_step)
     result = segs_list_to_signal(detect_segs, len(result))
 
     return result
@@ -395,17 +403,21 @@ def segs_list_from_signal(sig):
         idx += 1
     return res
 
-def merge_segs(segs, min_len, merge_thr):
+def merge_segs(segs, min_len, max_len, merge_thr):
 
     def should_delete(seg):
         return (seg['end'] - seg['st']) <= min_len
 
     def can_merge(lst, idx1, idx2):
         assert idx1 != idx2
+        c1 = lst[idx1]['end'] - lst[idx1]['st'] < max_len
+        c2 = lst[idx2]['end'] - lst[idx2]['st'] < max_len
         if idx1 > idx2:
-            return (lst[idx1]['st'] - lst[idx2]['end']) < merge_thr
+            c3 = (lst[idx1]['st'] - lst[idx2]['end']) < merge_thr
+            return (c1 and c2 and c3)
         else:
-            return (lst[idx2]['st'] - lst[idx1]['end']) < merge_thr
+            c3 = (lst[idx2]['st'] - lst[idx1]['end']) < merge_thr
+            return (c1 and c2 and c3)
 
     def merge_segs(lst, from_which, to_which):
         assert(from_which != to_which)
