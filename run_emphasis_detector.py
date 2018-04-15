@@ -2,7 +2,7 @@
 import os
 import sys
 import numpy
-import scipy.signal as sig
+import scipy.signal as sci_sig
 import scipy.io.wavfile as wav
 import argparse
 import json
@@ -244,6 +244,13 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     RESULT_MASK = update_detection_results(RESULT_MASK, samplerate, config['detect_hysteresis'],
                                            config['detect_merge_threshold'], config['detect_min_len'],
                                            config['detect_max_len'])
+
+    # MY_DBG
+    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, 65)
+    print(scan_segs)
+    input('eat some ass')
+
+
     # one more time make sure unvoiced segs are not detected
     RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
 
@@ -463,6 +470,31 @@ def segs_list_to_signal(segs, total_len):
         res[seg['st']:seg['end']] = 1
     return res
 
+def position_scan_regions(sig, detect_mask, scan_len):
+    detect_segments = segs_list_from_signal(detect_mask)
+    assert(utils_sig.is_array(sig))
+    assert(utils_sig.is_array(detect_mask))
+    assert((scan_len % 2) == 1)
+
+    half_seg_len = (scan_len - 1)/2
+    fsig = condition_signal_for_emph_scanning(sig)
+    res = []
+    for dseg in detect_segments:
+        dchunk = fsig[dseg['st']:dseg['end']]
+        max_idx = numpy.argmax(dchunk)
+        #assert(len(max_idx) == 1) # check that we have only 1 maximum value in the result, otherwise it is VERY strange
+        scan_set_st = dseg['st'] + max_idx - half_seg_len
+        scan_set_end = dseg['st'] + max_idx + half_seg_len
+        res.append({'st':scan_set_st, 'end':scan_set_end})
+
+    return res
+
+def condition_signal_for_emph_scanning(sig):
+    # for now the only conditioning is LP-filtering the signal to remove jumpyness
+    fir = sci_sig.hann(65)
+    res = sci_sig.filtfilt(fir, 1, sig)
+    return res
+
 def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname, CFG):
     print('\n.................................')
     print('DEBUG mode enabled, will save some additional info: {0}'.format(str(dbg_stuff.keys())))
@@ -523,24 +555,23 @@ if __name__ == '__main__':
 
     mode = ARGS.mode
 
-    input = ARGS.i
-    output = ARGS.o
-    mask = ARGS.m
+    input_data = ARGS.i
+    output_data = ARGS.o
+    mask_data = ARGS.m
 
-    # Implement a scan-segment adjustment routine which will select a segment with detected emphasis and
-    # will center a window of fixed lengthe somethere alongst it. Probably by max of energy or smth alike.
+    # Go on from 'MY_DBG' point and debug the scan-segments returned by implemented routine
 
     mode = ARGS.mode
     if mode is None:
         mode = 'file'
 
     if mode == 'dir':
-        if not os.path.exists(output):
-            os.makedirs(output)
+        if not os.path.exists(output_data):
+            os.makedirs(output_data)
 
     if ARGS.cfg is None:
         CFG = get_default_config()
-        cfg_filename = os.path.join(output, 'used_config.cfg') if mode == 'dir' else 'used_config.cfg'
+        cfg_filename = os.path.join(output_data, 'used_config.cfg') if mode == 'dir' else 'used_config.cfg'
         dump_config(CFG, cfg_filename)
     else:
         CFG = get_config_from_json(ARGS.cfg)
@@ -548,10 +579,10 @@ if __name__ == '__main__':
 
     if mode == 'file':
         # run everything to process one input file only
-        run_main_one_file(input, output, mask, CFG)
+        run_main_one_file(input_data, output_data, mask_data, CFG)
     elif mode == 'dir':
         # run everything to process a set of files in specified dir
-        run_main_proc_dir(input, output, mask, CFG)
+        run_main_proc_dir(input_data, output_data, mask_data, CFG)
     else:
         raise Exception('ERROR : some unknown mode scecified')
 
