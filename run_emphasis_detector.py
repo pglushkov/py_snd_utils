@@ -13,6 +13,7 @@ import utils.sig_utils as utils_sig
 import utils.tdomain_proc_utils as utils_td
 import utils.plot_utils as utils_plot
 import utils.pitch_utils as utils_pitch
+import utils.emph_detect_utils as utils_emph
 
 from run_world_by_reaper import run_world_by_reaper
 from run_spectral_change import estimate_sc_from_envelopes
@@ -176,6 +177,9 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     print(std_no_sil)
     print(rms_no_sil)
 
+    # MY_DBG
+    #utils_plot.plot_curves([signal], [signal_time])
+    #input('eat a dick!')
 
     chunk_nsamples = int(config['chunk_size_samples'])
     olap_nsamples = int(config['overlap_samples'])
@@ -246,10 +250,15 @@ def run_emp_detect_type1(wavfile, config, silent = True):
                                            config['detect_max_len'])
 
     # MY_DBG
-    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, 65)
-    print(scan_segs)
+    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, 513)
+    #print(scan_segs)
+    utils_plot.plot_emphasis_scan_segs(signal.squeeze(), RESULT_MASK, scan_segs, samplerate)
     input('eat some ass')
 
+    # MY_DBG
+    #utils_plot.plot_curves([signal], [signal_time])
+    #utils_plot.plot_curves([signal, RESULT_MASK], [signal_time, signal_time])
+    #input('eat a dick!')
 
     # one more time make sure unvoiced segs are not detected
     RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
@@ -477,22 +486,16 @@ def position_scan_regions(sig, detect_mask, scan_len):
     assert((scan_len % 2) == 1)
 
     half_seg_len = (scan_len - 1)/2
-    fsig = condition_signal_for_emph_scanning(sig)
+    fsig = utils_emph.condition_signal_for_emph_scanning(sig)
     res = []
     for dseg in detect_segments:
         dchunk = fsig[dseg['st']:dseg['end']]
         max_idx = numpy.argmax(dchunk)
         #assert(len(max_idx) == 1) # check that we have only 1 maximum value in the result, otherwise it is VERY strange
-        scan_set_st = dseg['st'] + max_idx - half_seg_len
-        scan_set_end = dseg['st'] + max_idx + half_seg_len
+        scan_set_st = int(dseg['st'] + max_idx - half_seg_len)
+        scan_set_end = int(dseg['st'] + max_idx + half_seg_len)
         res.append({'st':scan_set_st, 'end':scan_set_end})
 
-    return res
-
-def condition_signal_for_emph_scanning(sig):
-    # for now the only conditioning is LP-filtering the signal to remove jumpyness
-    fir = sci_sig.hann(65)
-    res = sci_sig.filtfilt(fir, 1, sig)
     return res
 
 def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname, CFG):
