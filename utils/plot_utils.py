@@ -50,11 +50,11 @@ def plot_emphasis_scan_segs(signal, detect, scan_segs, samplerate):
     assert (utils_sig.is_array(detect))
 
     sig_time = numpy.arange(len(signal)) * samplerate
-    # sig_cond = utils_emph.condition_signal_for_emph_scanning(signal)
-    # plt_y = [signal, sig_cond, detect]
-    # plt_x = [sig_time, sig_time, sig_time]
-    plt_y = [signal, detect]
-    plt_x = [sig_time, sig_time]
+    sig_cond = utils_emph.condition_signal_for_emph_scanning(signal)
+    plt_y = [signal, sig_cond, detect]
+    plt_x = [sig_time, sig_time, sig_time]
+    #plt_y = [signal, detect]
+    #plt_x = [sig_time, sig_time]
     for scan_seg in scan_segs:
         tmpy = numpy.zeros(len(signal))
         tmpy[scan_seg['st']:scan_seg['end']] = 1.0

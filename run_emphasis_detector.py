@@ -62,7 +62,7 @@ def get_default_config():
     res['spec_change_band_end'] = 3500  # hz
     res['detect_type'] = 1
     res['peak2change_thr'] = 1.3 # in some imaginary unknown logarithmic twisted units
-    res['scan_region_len'] = 0.3 # seconds, length of window that we will position over detected regions and scan in the end
+    res['scan_region_len'] = 0.24 # seconds, length of window that we will position over detected regions and scan in the end
 
     return res
 
@@ -250,7 +250,10 @@ def run_emp_detect_type1(wavfile, config, silent = True):
                                            config['detect_max_len'])
 
     # MY_DBG
-    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, 513)
+    scan_seg_len = int(config['scan_region_len'] * samplerate)
+    if scan_seg_len % 2 == 0:
+        scan_seg_len += 1
+    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, scan_seg_len)
     #print(scan_segs)
     utils_plot.plot_emphasis_scan_segs(signal.squeeze(), RESULT_MASK, scan_segs, samplerate)
     input('eat some ass')
@@ -562,7 +565,8 @@ if __name__ == '__main__':
     output_data = ARGS.o
     mask_data = ARGS.m
 
-    # Go on from 'MY_DBG' point and debug the scan-segments returned by implemented routine
+    # scan-window positioning more or less works. Some fine-tuning might be needed but it mostly works. Wrap-up the code
+    # and try to run the final extraction procedures that will be used in NN pipeline
 
     mode = ARGS.mode
     if mode is None:
