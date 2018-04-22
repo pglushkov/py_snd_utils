@@ -147,7 +147,8 @@ def run_main_reaper_pm_env(fft_time_step, tstep):
     (pmarks, _) = utils_reaper.read_pm_from_file(pmtxtname)
     D_FB_X = pmarks[1:-1, 0]
 
-    print(dfb.shape)
+    # MY_DBG
+    #print(dfb.shape)
 
     #utils_plot.plot_curves([ pm_chunks[100,:], pm_chunks[101,:], pm_chunks[102,:] ])
     utils_plot.plot_curves([signal, mask, dfb], [SIG_X, MASK_X, D_FB_X])
@@ -173,7 +174,8 @@ def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples, band = Non
     else:
         assert(len(band) == 2)
         dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
-        print(dfb.shape)
+        # MY_DBG
+        #print(dfb.shape)
         for k in range(band[0], band[1]):
             dfb += numpy.abs(utils_td.deriv(fbank_envs[:, k].T))
     #dfb /= fbank_envs.shape[1]

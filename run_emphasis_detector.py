@@ -18,6 +18,7 @@ import utils.emph_detect_utils as utils_emph
 from run_world_by_reaper import run_world_by_reaper
 from run_spectral_change import estimate_sc_from_envelopes
 
+
 def parse_input_args():
     parse = argparse.ArgumentParser()
     parse.add_argument('-i', required = True, type = str,
@@ -34,11 +35,13 @@ def parse_input_args():
     args = parse.parse_args()
     return args
 
+
 def get_config_from_json(filename):
     with open(filename) as cfg_file:
         jsoncfg = json.load(cfg_file)
 
     return jsoncfg
+
 
 def get_default_config():
     res = {}
@@ -62,15 +65,18 @@ def get_default_config():
     res['spec_change_band_end'] = 3500  # hz
     res['detect_type'] = 1
     res['peak2change_thr'] = 1.3 # in some imaginary unknown logarithmic twisted units
-    res['scan_region_len'] = 0.24 # seconds, length of window that we will position over detected regions and scan in the end
+    res['scan_region_len'] = 0.3 # seconds, length of window that we will position over detected regions and scan in the end
+    res['detect_scan_min_olap'] = 0.75
 
     return res
+
 
 def dump_config(cfg, filename):
     cfgstr = json.dumps(cfg, indent = 2)
     # jsonobj = json.loads(cfgstr)
     with open(filename, 'w') as f:
         f.write(cfgstr)
+
 
 def run_main_one_file(infile, outfile, maskfile, CFG):
 
@@ -83,14 +89,18 @@ def run_main_one_file(infile, outfile, maskfile, CFG):
     print("Will process file : {0}".format(wavname))
     print("Will write result to : {0}".format(outname))
 
-    (detect, detect_time, dbg_stuff) = run_emp_detect(wavname, CFG, silent = True)
+    (detect, detect_time, scan_segs, dbg_stuff) = run_emp_detect(wavname, CFG, silent = True)
 
     (samplerate, signal) = wav.read(wavname)
     signal_time = numpy.arange(len(signal)) / samplerate
 
-    plot_curves_y = [signal/(2.0 ** 15.0), detect]
-    plot_curves_x = [signal_time, detect_time]
-    plot_labels = ['input signal', 'detection mask']
+    #plot_curves_y = [signal/(2.0 ** 15.0), detect]
+    #plot_curves_x = [signal_time, detect_time]
+    #plot_labels = ['input signal', 'detection mask']
+
+    plot_curves_y = [signal/(2.0 ** 15.0)]
+    plot_curves_x = [signal_time]
+    plot_labels = ['input signal']
 
     if maskfile is not None:
         (samplerate, mask) = wav.read(maskfile)
@@ -99,6 +109,15 @@ def run_main_one_file(infile, outfile, maskfile, CFG):
         plot_curves_y.append(mask)
         plot_curves_x.append(mask_time)
         plot_labels.append('reference manual mask')
+
+    if scan_segs is not None:
+        (seg_x, seg_y) = utils_plot.get_scan_seg_plots(scan_segs, samplerate, len(signal))
+        seg_num = 1
+        for x, y in zip(seg_x, seg_y):
+            plot_curves_y.append(y)
+            plot_curves_x.append(x)
+            plot_labels.append('scan seg {0}'.format(seg_num))
+            seg_num += 1
 
     detected_signal = signal * detect
 
@@ -110,12 +129,28 @@ def run_main_one_file(infile, outfile, maskfile, CFG):
     utils_plot.plot_curves(plot_curves_y, plot_curves_x, labels = plot_labels, saveto = plotname)
     print('Saving plot to {0}'.format(plotname))
 
+    scan_segs_descr = scan_segs_to_json(scan_segs, samplerate)
+    jsonname = os.path.splitext(outname)[0] + '.json'
+    with open(jsonname, 'w') as of:
+        of.write(json.dumps(scan_segs_descr))
+
     if (CFG['debug_mode']):
         plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname,
                             CFG)
 
     print('All done, press any key ...')
     #input()
+
+
+def scan_segs_to_json(scan_segs, samplerate):
+    res = {'samplerate' : samplerate}
+    segnum = 1
+    for scan_seg in scan_segs:
+        segname = 'segment{0}'.format(segnum)
+        res[segname] = scan_seg
+        segnum += 1
+
+    return res
 
 def run_main_proc_dir(indir, outdir, maskdir, CFG):
 
@@ -145,6 +180,7 @@ def run_main_proc_dir(indir, outdir, maskdir, CFG):
 
         run_main_one_file(wavname, outname, maskfile, CFG)
 
+
 def run_emp_detect(wavfile, config, silent = True):
 
     dtype = config['detect_type']
@@ -155,6 +191,7 @@ def run_emp_detect(wavfile, config, silent = True):
         return run_emp_detect_type2(wavfile, config, silent)
     else:
         raise Exception('Unknown detection type specified!!! ({0})'.format(dtype))
+
 
 def run_emp_detect_type1(wavfile, config, silent = True):
 
@@ -173,9 +210,10 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     std_no_sil = numpy.std(signal_no_sil)
     rms_no_sil = utils_td.get_rms(signal_no_sil)
 
-    print(numpy.mean(signal_no_sil))
-    print(std_no_sil)
-    print(rms_no_sil)
+    # MY_DBG
+    #print(numpy.mean(signal_no_sil))
+    #print(std_no_sil)
+    #print(rms_no_sil)
 
     # MY_DBG
     #utils_plot.plot_curves([signal], [signal_time])
@@ -249,14 +287,13 @@ def run_emp_detect_type1(wavfile, config, silent = True):
                                            config['detect_merge_threshold'], config['detect_min_len'],
                                            config['detect_max_len'])
 
-    # MY_DBG
     scan_seg_len = int(config['scan_region_len'] * samplerate)
     if scan_seg_len % 2 == 0:
         scan_seg_len += 1
-    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, scan_seg_len)
-    #print(scan_segs)
+    scan_segs = position_scan_regions(signal.squeeze(), RESULT_MASK, scan_seg_len, config['detect_scan_min_olap'])
+    # MY_DBG
     utils_plot.plot_emphasis_scan_segs(signal.squeeze(), RESULT_MASK, scan_segs, samplerate)
-    input('eat some ass')
+    input('some input')
 
     # MY_DBG
     #utils_plot.plot_curves([signal], [signal_time])
@@ -267,7 +304,9 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     RESULT_MASK = RESULT_MASK * (DETECT_VO > 0)
 
     if not silent:
-        utils_plot.plot_curves( [signal, RESULT_MASK], [signal_time, signal_time])
+        #utils_plot.plot_curves( [signal, RESULT_MASK], [signal_time, signal_time])
+        utils_plot.plot_emphasis_scan_segs(signal.squeeze(), RESULT_MASK, scan_segs,
+                                           samplerate)
 
     SC_DFB = numpy.interp(signal_time.squeeze(), sc_time.squeeze(), sc_dfb.squeeze())
     P2P = numpy.interp(signal_time.squeeze(), sig_chunks_time.squeeze(), p2p.squeeze())
@@ -276,7 +315,8 @@ def run_emp_detect_type1(wavfile, config, silent = True):
         'f0-extreme_detect' : DETECT_EX, 'threshold_base' : std_no_sil, 'spec_change' : SC_DFB,
         'peak2peak' : P2P}
 
-    return (RESULT_MASK, signal_time, dbg_stuff)
+    return (RESULT_MASK, signal_time, scan_segs, dbg_stuff)
+
 
 def run_emp_detect_type2(wavfile, config, silent = True):
 
@@ -297,9 +337,9 @@ def run_emp_detect_type2(wavfile, config, silent = True):
     std_no_sil = numpy.std(signal_no_sil)
     rms_no_sil = utils_td.get_rms(signal_no_sil)
 
-    print(numpy.mean(signal_no_sil))
-    print(std_no_sil)
-    print(rms_no_sil)
+    #print(numpy.mean(signal_no_sil))
+    #print(std_no_sil)
+    #print(rms_no_sil)
 
 
     chunk_nsamples = int(config['chunk_size_samples'])
@@ -389,7 +429,7 @@ def update_detection_results(mask, samplerate, detect_hysteresis, merge_threshol
     min_keep_len = int(numpy.round(min_len * samplerate))
     max_keep_len = int(numpy.round(max_len * samplerate))
     # MY_DBG
-    print("hyst_step = {0}  merge_step = {1} ...".format(hyst_step, merge_step))
+    #print("hyst_step = {0}  merge_step = {1} ...".format(hyst_step, merge_step))
     sig_len = len(mask)
     idx = 0
     result = numpy.copy(mask)
@@ -482,7 +522,7 @@ def segs_list_to_signal(segs, total_len):
         res[seg['st']:seg['end']] = 1
     return res
 
-def position_scan_regions(sig, detect_mask, scan_len):
+def position_scan_regions(sig, detect_mask, scan_len, detect_scan_olap):
     detect_segments = segs_list_from_signal(detect_mask)
     assert(utils_sig.is_array(sig))
     assert(utils_sig.is_array(detect_mask))
@@ -497,9 +537,55 @@ def position_scan_regions(sig, detect_mask, scan_len):
         #assert(len(max_idx) == 1) # check that we have only 1 maximum value in the result, otherwise it is VERY strange
         scan_set_st = int(dseg['st'] + max_idx - half_seg_len)
         scan_set_end = int(dseg['st'] + max_idx + half_seg_len)
-        res.append({'st':scan_set_st, 'end':scan_set_end})
+        scan_seg = {'st':scan_set_st, 'end':scan_set_end}
+
+        # make sure that detection segment and corresponding scan-segment overlap on at least 50%
+        if get_seg_overlap(dseg, scan_seg) < detect_scan_olap:
+            scan_seg = adjust_seg_overlap(dseg, scan_seg, len(sig), detect_scan_olap)
+
+        if scan_seg is not None:
+            res.append(scan_seg)
 
     return res
+
+def get_seg_overlap(seg1, seg2):
+    olap = 0.0
+    if seg1['end'] > seg2['end']:
+        max_seg = seg1
+        min_seg = seg2
+    else:
+        max_seg = seg2
+        min_seg = seg1
+
+    olap = (min_seg['end'] - max_seg['st']) / (min_seg['end'] - min_seg['st'])
+    olap = 1.0 if olap > 1.0 else olap
+
+    return olap
+
+
+def adjust_seg_overlap(base_seg, adjust_seg, sig_len, thr):
+    res = adjust_seg
+    olap = get_seg_overlap(base_seg, adjust_seg)
+    shiftlen = int((thr - olap) * (adjust_seg['end'] - adjust_seg['st']))
+
+    # MY_DBG
+    #print('shiftlen = {0}'.format(shiftlen))
+
+    if adjust_seg['end'] > base_seg['end']:
+        res['st'] = res['st'] - shiftlen
+        res['end'] = res['end'] - shiftlen
+        if (res['st'] < 0 or res['end'] < 0):
+            print('ERROR : results of scan-seg ajdustmet break boarders of original signal (begin)!')
+            return None
+    else:
+        res['st'] = res['st'] + shiftlen
+        res['end'] = res['end'] + shiftlen
+        if (res['st'] > sig_len or res['end'] > sig_len):
+            print('ERROR : results of scan-seg ajdustmet break boarders of original signal (end)!')
+            return None
+
+    return res
+
 
 def plot_debug_data(dbg_stuff, plot_curves_y, plot_curves_x, plot_labels, signal_time, outname, CFG):
     print('\n.................................')
@@ -565,8 +651,9 @@ if __name__ == '__main__':
     output_data = ARGS.o
     mask_data = ARGS.m
 
-    # scan-window positioning more or less works. Some fine-tuning might be needed but it mostly works. Wrap-up the code
-    # and try to run the final extraction procedures that will be used in NN pipeline
+    # Scan-windows positioning estimation works satisfactory for running initial tests:
+    # 1) create a script that extracts scan-segs from input WAV's based in created JSON scan-descriptors
+    # 2) when got the time - at least try to make some refactoring, cause current code is shit
 
     mode = ARGS.mode
     if mode is None:
