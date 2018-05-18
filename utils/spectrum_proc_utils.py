@@ -5,6 +5,8 @@
 import numpy
 import collections
 
+from utils import tdomain_proc_utils as utils_td
+
 # accepts scalar or numpy array as input
 def mel2freq(mel):
     return 700.0*(10.0**(mel/2595.0) - 1.0)
@@ -289,3 +291,46 @@ def calc_spec_gram_flatness(sgram):
         tmp = get_spectral_flatness(sgram[k,:])
         res[k,0] = tmp
     return res
+
+
+def estimate_sc_from_envelopes(fbank_envs, samplerate, tstep_samples, band = None):
+
+    # expect 'fbank_envs' to be [num_chunks, num_bins] shape
+
+    sampleperiod = 1.0 / samplerate
+    FB_STEP = sampleperiod * tstep_samples
+    FB_DUR = fbank_envs.shape[0] * FB_STEP
+    FB_X = numpy.arange(0, FB_DUR, FB_STEP)
+
+    # 1st deriv
+    if band is None:
+        dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
+        for k in range(fbank_envs.shape[1]):
+            dfb += numpy.abs(utils_td.deriv(fbank_envs[:,k].T))
+    else:
+        assert(len(band) == 2)
+        dfb = numpy.zeros(fbank_envs.shape[0] - 2).reshape( (1,-1) )
+        # MY_DBG
+        #print(dfb.shape)
+        for k in range(band[0], band[1]):
+            dfb += numpy.abs(utils_td.deriv(fbank_envs[:, k].T))
+    #dfb /= fbank_envs.shape[1]
+    D_FB_X = numpy.arange(FB_STEP, FB_DUR - FB_STEP, FB_STEP)
+    if len(D_FB_X) > dfb.shape[1]:
+        D_FB_X = D_FB_X[0:dfb.shape[1]]
+
+    D_FB_X = D_FB_X.reshape( dfb.shape )
+
+    # # 2nd deriv
+    # dfb = numpy.zeros(fbank_envs.shape[0] - 4).reshape( (1,-1) )
+    # for k in range(fbank_envs.shape[1]):
+    #     tmp = utils_td.deriv(fbank_envs[:, k].T)
+    #     dfb += utils_td.deriv(tmp)
+    # dfb /= fbank_envs.shape[1]
+    # D_FB_X = numpy.arange(FB_STEP*2, FB_DUR - FB_STEP*2, FB_STEP)
+
+    #dfb = numpy.diff(fbank_envs[:,2])
+    #D_FB_X = numpy.arange( 0, FB_DUR - FB_STEP, FB_STEP )
+
+    #return (deriv, D_FB_X)
+    return (dfb, D_FB_X)
