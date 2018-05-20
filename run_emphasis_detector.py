@@ -210,7 +210,7 @@ if __name__ == '__main__':
 
     if ARGS.cfg is None:
         CFG = utils_emph.get_default_config()
-        cfg_filename = os.path.join(output_data, 'used_config.cfg') if mode == 'dir' else 'used_config.cfg'
+        cfg_filename = os.path.join(output_data, 'emp_detect_used_config.cfg') if mode == 'dir' else 'used_config.cfg'
         dump_config(CFG, cfg_filename)
     else:
         CFG = get_config_from_json(ARGS.cfg)
