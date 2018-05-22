@@ -57,13 +57,21 @@ def chunk_signal_by_pm(signal, marks, samplerate, fft_size):
 
     return res
 
-def run_reaper(wav_name, reaper_name, out_path = ''):
-    f0_name = os.path.splitext(os.path.basename(wav_name))[0] + '_reaper_f0.txt'
-    pm_name = os.path.splitext(os.path.basename(wav_name))[0] + '_reaper_pm.txt'
+def run_reaper(wav_name, reaper_name, out_path = '', out_file_names = None, ascii_output = True):
+
+    if out_file_names is None:
+        f0_name = os.path.splitext(os.path.basename(wav_name))[0] + '_reaper_f0.txt'
+        pm_name = os.path.splitext(os.path.basename(wav_name))[0] + '_reaper_pm.txt'
+    else:
+        f0_name = out_file_names['f0']
+        pm_name = out_file_names['pm']
 
     f0_file_name = os.path.join(out_path, f0_name)
     pm_file_name = os.path.join(out_path, pm_name)
-    reaper_args = ['-i', wav_name, '-f', f0_file_name, '-p', pm_file_name, '-a']
+    reaper_args = ['-i', wav_name, '-f', f0_file_name, '-p', pm_file_name]
+
+    if ascii_output:
+        reaper_args.append('-a')
 
     reaper_res = utils_misc.run_process(reaper_name, reaper_args)
     print("Running REAPER returned result : {0}".format(reaper_res))

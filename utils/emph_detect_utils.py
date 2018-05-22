@@ -221,19 +221,19 @@ def adjust_seg_overlap(base_seg, adjust_seg, sig_len, thr):
 
     return res
 
-def run_emp_detect(wavfile, config, silent = True):
+def run_emp_detect(wavfile, config, silent = True, reuse_data = False):
 
     dtype = config['detect_type']
 
     if dtype == 1:
-        return run_emp_detect_type1(wavfile, config, silent)
+        return run_emp_detect_type1(wavfile, config, silent, reuse_data)
     elif dtype == 2:
         return run_emp_detect_type2(wavfile, config, silent)
     else:
         raise Exception('Unknown detection type specified!!! ({0})'.format(dtype))
 
 
-def run_emp_detect_type1(wavfile, config, silent = True):
+def run_emp_detect_type1(wavfile, config, silent = True, reuse_data = False):
 
     # (DONE) 1) spectral change (basically envelope stability sort of)
     # (DONE) 2) peak-to-peak rate
@@ -271,7 +271,11 @@ def run_emp_detect_type1(wavfile, config, silent = True):
     sig_chunks_tstep = olap_nsamples / samplerate
     sig_chunks_time = numpy.arange(sig_chunks_num) * sig_chunks_tstep
 
-    wrld_res = utils_world.run_world_by_reaper(wavfile, config['wrk_path'], config['reaper_path'], config['world_path'])
+    if reuse_data:
+        print("Trying to reuse previously-calculated data for file {0} in dir {1} ...".format(wavfile, config['wrk_path']))
+        wrld_res = utils_world.try_search_previous_world_results(wavfile, config['wrk_path'])
+    else:
+        wrld_res = utils_world.run_world_by_reaper(wavfile, config['wrk_path'], config['reaper_path'], config['world_path'])
 
     if (wrld_res[0] is None or wrld_res[1] is None or wrld_res[2] is None):
         raise Exception('LEFUCKUP')
