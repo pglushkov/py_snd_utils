@@ -467,7 +467,7 @@ def run_emp_detect_type2(wavfile, config, silent = True):
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
-def cut_segments_from_data(data, datarate, segments, segrate, result_len, TOLERANCE = 4):
+def cut_segments_from_data(data, datarate, segments, segrate, result_size, TOLERANCE = 4):
     res = []
     for seg in segments:
         seg_start_time = seg['st'] * segrate
@@ -475,10 +475,10 @@ def cut_segments_from_data(data, datarate, segments, segrate, result_len, TOLERA
         data_start_idx = int(numpy.round(seg_start_time / datarate))
         data_end_idx = int(numpy.round(seg_end_time / datarate))
         data_len = data_end_idx - data_start_idx
-        if abs(data_len - result_len) < TOLERANCE:
+        if abs(data_len - result_size) < TOLERANCE:
             # need ot adjust st/end idxs
-            right_adj = int(numpy.round( abs(data_len - result_len)/2 ))
-            left_adj = abs(data_len - result_len) - right_adj
+            right_adj = int(numpy.round( abs(data_len - result_size)/2 ))
+            left_adj = abs(data_len - result_size) - right_adj
             data_end_idx += right_adj
             data_start_idx -= left_adj
         else:
@@ -486,18 +486,22 @@ def cut_segments_from_data(data, datarate, segments, segrate, result_len, TOLERA
         res.append( data[data_start_idx:data_end_idx,] )
     return res
 
-def apply_segments_to_file(infile, datadim = None, filetype = None, out_path = ''):
+def apply_segments_to_file(infile, filetype, datarate, segments, segrate, datadim = 1, out_path = ''):
 
-    FINISHED HERE ...
+    WHAT DA FUCK TO DO WITH 'result_size'? MB rename it to 'expected_segment_size' and go from this
+    concept?
 
-    if filetype is None or datadim is None:
-        # try to infer the type from input file exception
-        ext = os.path.splitext(infile)[1]
-        if ext == '.wav':
-            filetype = 'WAV'
-            datadim = 1
-        if ext == '.f0':
-            filetype = 'F0'
-            datadim = 1
-        else:
-            raise Exception('Input file {0} datatype and dimensionality is not specified and cannot infer it!'.format(infile))
+    if filetype == 'wav':
+        # overwrite input datarate with actual samplerate from read WAV
+        (datarate, signal) = wav.read(infile)
+        if (signal.shape[1] > 1):
+            print("WARNING: for now only MONO files are supported, dropping all channels except for 1st!")
+            signal = signal[:,1]
+        signal = signal.reshape((-1, 1))
+        signal = signal / (2.0 ** 15.0)
+        segs = cut_segments_from_data(signal, datarate, segments, segrate, result_size)
+    if filetype == 'float32' or filetype == 'float64' or filetype == 'int32' or filetype == 'int16':
+        data = numpy.fromfile(infile, dtype = filetype)
+        data = data.reshape( (-1, datadim) )
+        seg = cut_segments_from_data(data, datarate, segments, segrate, result_size)
+
