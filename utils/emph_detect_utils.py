@@ -467,41 +467,57 @@ def run_emp_detect_type2(wavfile, config, silent = True):
 
     return (RESULT_MASK, signal_time, dbg_stuff)
 
-def cut_segments_from_data(data, datarate, segments, segrate, result_size, TOLERANCE = 4):
+def cut_segments_from_data(data, datarate, segments, segrate):
     res = []
     for seg in segments:
         seg_start_time = seg['st'] * segrate
         seg_end_time = seg['end'] * segrate
         data_start_idx = int(numpy.round(seg_start_time / datarate))
         data_end_idx = int(numpy.round(seg_end_time / datarate))
-        data_len = data_end_idx - data_start_idx
-        if abs(data_len - result_size) < TOLERANCE:
-            # need ot adjust st/end idxs
-            right_adj = int(numpy.round( abs(data_len - result_size)/2 ))
-            left_adj = abs(data_len - result_size) - right_adj
-            data_end_idx += right_adj
-            data_start_idx -= left_adj
-        else:
-            raise Exception('ERROR : segment size {0} differs too much from specified wanted length {1}'.format(data_len, result_len))
         res.append( data[data_start_idx:data_end_idx,] )
     return res
 
-def apply_segments_to_file(infile, filetype, datarate, segments, segrate, datadim = 1, out_path = ''):
+def read_segments_from_json(jsonfile):
+    with open(jsonfile, 'r') as F:
+        data = json.load(F)
+    rate = data['samplerate']
+    segs = []
+    for key in data:
+        if key.find('segment') >= 0:
+            segs.append(data[key])
+    return (rate, segs)
 
-    WHAT DA FUCK TO DO WITH 'result_size'? MB rename it to 'expected_segment_size' and go from this
-    concept?
+def apply_segments_to_file(infile, filetype, datarate, segments, segrate, datadim = 1, out_path = ''):
 
     if filetype == 'wav':
         # overwrite input datarate with actual samplerate from read WAV
         (datarate, signal) = wav.read(infile)
-        if (signal.shape[1] > 1):
+        if (len(signal.shape) > 1 and signal.shape[1] > 1):
             print("WARNING: for now only MONO files are supported, dropping all channels except for 1st!")
             signal = signal[:,1]
         signal = signal.reshape((-1, 1))
         signal = signal / (2.0 ** 15.0)
-        segs = cut_segments_from_data(signal, datarate, segments, segrate, result_size)
-    if filetype == 'float32' or filetype == 'float64' or filetype == 'int32' or filetype == 'int16':
+        segs = cut_segments_from_data(signal, datarate, segments, segrate)
+    elif filetype == 'float32' or filetype == 'float64' or filetype == 'int32' or filetype == 'int16':
         data = numpy.fromfile(infile, dtype = filetype)
         data = data.reshape( (-1, datadim) )
-        seg = cut_segments_from_data(data, datarate, segments, segrate, result_size)
+        segs = cut_segments_from_data(data, datarate, segments, segrate)
+    else:
+        raise Exception('ERROR : trying to cut into chunks file of unsupported type!')
 
+    outfilenames = []
+    for k in range(len(segs)):
+        nameparts = os.path.splitext(infile)
+        if not out_path:
+            newfilename = nameparts[0] + '_seg_{0}'.format(k) + nameparts[1]
+        else:
+            newfilename = os.path.join(out_path, os.path.basename(nameparts[0]) + '_seg_{0}'.format(k) + nameparts[1])
+        outfilenames.append(newfilename)
+        if filetype == 'wav':
+            wav.write(newfilename, datarate, segs[k])
+        elif filetype == 'float32' or filetype == 'float64' or filetype == 'int32' or filetype == 'int16':
+            segs[k].tofile(newfilename)
+        else:
+            raise Exception('ERROR : trying to write chunks in a file of unsupported type!')
+
+    return outfilenames
