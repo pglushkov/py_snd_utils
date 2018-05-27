@@ -470,10 +470,10 @@ def run_emp_detect_type2(wavfile, config, silent = True):
 def cut_segments_from_data(data, datarate, segments, segrate):
     res = []
     for seg in segments:
-        seg_start_time = seg['st'] * segrate
-        seg_end_time = seg['end'] * segrate
-        data_start_idx = int(numpy.round(seg_start_time / datarate))
-        data_end_idx = int(numpy.round(seg_end_time / datarate))
+        seg_start_time = seg['st'] / segrate
+        seg_end_time = seg['end'] / segrate
+        data_start_idx = int(numpy.round(seg_start_time * datarate))
+        data_end_idx = int(numpy.round(seg_end_time * datarate))
         res.append( data[data_start_idx:data_end_idx,] )
     return res
 
